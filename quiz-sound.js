@@ -12,7 +12,7 @@ window.QuizzesSound = (() => {
     ducked = false,
     lastTick = null,
     finishTimer;
-  const isHost = location.pathname !== "/join";
+  const isHost = !["/join", "/play"].includes(location.pathname);
   let volume = 0.3,
     muted = false,
     onHostChange = () => {};
@@ -237,7 +237,11 @@ window.QuizzesSound = (() => {
   document.addEventListener(
     "play",
     (event) => {
-      if (event.target.matches?.("#hostMedia audio, #playerMedia audio")) {
+      if (
+        event.target.matches?.(
+          "#hostMedia audio, #playerMedia audio, #independentApp audio",
+        )
+      ) {
         ducked = true;
         update();
       }
@@ -248,7 +252,11 @@ window.QuizzesSound = (() => {
     document.addEventListener(
       type,
       (event) => {
-        if (event.target.matches?.("#hostMedia audio, #playerMedia audio")) {
+        if (
+          event.target.matches?.(
+            "#hostMedia audio, #playerMedia audio, #independentApp audio",
+          )
+        ) {
           ducked = false;
           update();
         }

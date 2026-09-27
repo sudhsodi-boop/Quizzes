@@ -26,6 +26,7 @@ const features = require("./workspace-features")({
   user,
   requireUser,
   owns,
+  isSiteAdmin,
   hash,
   passwordHash,
   cookie,
@@ -93,14 +94,19 @@ function token(req) {
       ?.slice(16) || ""
   );
 }
+function isSiteAdmin(host) {
+  const email = (process.env.SITE_ADMIN_EMAIL || "").trim().toLowerCase();
+  return !!email && !!host && host.email.toLowerCase() === email;
+}
 async function user(req) {
   const t = token(req);
   if (!t) return null;
-  return await db
+  const host = await db
     .prepare(
       "SELECT a.id,a.email,a.organization FROM sessions s JOIN admins a ON a.id=s.admin_id WHERE s.token=? AND s.expires>?",
     )
     .get(hash(t), Date.now());
+  return host ? { ...host, isSiteAdmin: isSiteAdmin(host) } : null;
 }
 async function requireUser(req) {
   const u = await user(req);
@@ -611,6 +617,40 @@ const server = http.createServer(async (req, res) => {
           url: "/media/" + id,
           mime,
         });
+      }
+      if (p === "/api/reports" && req.method === "DELETE") {
+        await db.withTransaction(async (tx) => {
+          await tx
+            .prepare(
+              "DELETE FROM reports WHERE id IN (SELECT item_id FROM ownership WHERE kind='reports' AND owner_id=?)",
+            )
+            .run(admin.id);
+          await tx
+            .prepare(
+              "DELETE FROM ownership WHERE kind=? AND owner_id=? AND item_id NOT IN (SELECT id FROM reports)",
+            )
+            .run("reports", admin.id);
+        });
+        return json(res, 200, { ok: true });
+      }
+      const reportDelete = p.match(/^\/api\/reports\/([a-f0-9-]+)$/);
+      if (reportDelete && req.method === "DELETE") {
+        await db.withTransaction(async (tx) => {
+          const owner = await tx
+            .prepare(
+              "SELECT owner_id FROM ownership WHERE kind=? AND item_id=?",
+            )
+            .get("reports", reportDelete[1]);
+          if (!owner || owner.owner_id !== admin.id)
+            fail("Report not found.", 404);
+          await tx
+            .prepare("DELETE FROM reports WHERE id=?")
+            .run(reportDelete[1]);
+          await tx
+            .prepare("DELETE FROM ownership WHERE kind=? AND item_id=?")
+            .run("reports", reportDelete[1]);
+        });
+        return json(res, 200, { ok: true });
       }
       if (p === "/api/reports" && req.method === "GET")
         return json(

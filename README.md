@@ -1,8 +1,8 @@
-# Quizzes · v0.5
+# Quizzes · v0.6
 
-A responsive live and self-paced quiz app for nonprofit use, with invitation-based private host workspaces. No subscriptions, billing or participant payments.
+A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s read-only oversight. No subscriptions, billing or participant payments.
 
-**Deployment status:** the owner has confirmed the previous version works on their Render/Supabase deployment. This v0.5 update is locally tested and must still be uploaded and deployed there. Use **[APPLY-v0.5-update.md](APPLY-v0.5-update.md)** to update the existing installation, or **[DEPLOY.md](DEPLOY.md)** for a new installation. Do not send passwords or API keys in chat.
+**Deployment status:** the owner has confirmed the previous version works on their Render/Supabase deployment. This v0.6 update is locally tested and must still be uploaded and deployed there. Use **[APPLY-v0.6-update.md](APPLY-v0.6-update.md)** to update the existing installation, or **[DEPLOY.md](DEPLOY.md)** for a new installation. Do not send passwords or API keys in chat.
 
 ## Implemented
 
@@ -21,11 +21,15 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 - Private, workspace-scoped ZIP backup download with password confirmation; includes the signed-in host account, quizzes, reports, media, recovery-code hashes, publications and submitted attempts, but not other hosts, invitation links, login sessions, hosting keys or live rooms. The operator CLI backup is installation-wide.
 - Restore command for a fresh destination; supports v1/v2 backups and refuses to overwrite existing accounts or reports.
 - Publish an immutable quiz snapshot for 24 hours, up to 100 browser attempts; nickname entry, saved submitted progress, provisional/final host results and CSV export. Participant scores/solutions appear only after closing. Deadlines are request-enforced, not dependent on background jobs.
-- One-use friend invitations expire in 24 hours. Friends create separate logins and empty private workspaces; no public signup, account fees, shared co-host rights or automatic quiz copying.
+- One-use friend invitations expire in 24 hours. Friends create separate logins and empty workspaces. Friends cannot view each other’s work; the designated site administrator can view saved quizzes/media/reports and publication results. This access is disclosed in signup and workspace notices. No public signup, account fees, shared editing rights or automatic quiz copying.
+- Optional SITE_ADMIN_EMAIL grants read-only installation oversight to one existing main account. It does not grant mutation of friends’ content, password/recovery access or cross-workspace backups.
+- Confirmed deletion of an individual saved live report, all own saved live reports, or a closed publication with its attempts. Source quizzes/media and old backups are kept.
+- Open self-paced publications can be extended to a later deadline (up to one year from now), preserving the link/progress. Closed publications cannot reopen.
+- Linked self-paced background soundtracks loop through questions, with a browser enable-sound gesture, manual question audio ducking and signed-source renewal. No linked track means no added self-paced background music.
 
-## v0.5 behavior and scoring
+## Current behavior and scoring
 
-See **[APPLY-v0.5-update.md](APPLY-v0.5-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
+See **[APPLY-v0.6-update.md](APPLY-v0.6-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
 
 ## Database authentication troubleshooting
 
@@ -74,6 +78,7 @@ Choose Free accounts, stay within limits, and do not authorize upgrades or payme
 | `INITIAL_ADMIN_PASSWORD` | First-host password, 12–128 characters; remove after first login                                   |
 | `ORGANIZATION_NAME`      | First-host organization name                                                                       |
 | `TRUST_PROXY`            | Set `1` only behind a trusted proxy; uses forwarded scheme and nearest forwarded client address    |
+| `SITE_ADMIN_EMAIL` | Existing main host email authorized for read-only oversight; absent means no site-admin role |
 | `WORKSPACE_OWNER_EMAIL` | One-time legacy ownership choice when upgrading an installation with several existing hosts |
 | `DATABASE_PASSWORD` | Optional raw database password override; never set this variable empty |
 | `DATA_DIR`               | Local SQLite/media directory, default `./data`                                                     |
@@ -81,7 +86,7 @@ Choose Free accounts, stay within limits, and do not authorize upgrades or payme
 
 `.env.example` lists names only. The application reads process environment variables; it does not automatically load `.env` files. Configure secrets through your hosting dashboard or a private terminal, not source control. Use Supabase's Session pooler connection string; certificate verification is on by default.
 
-PostgreSQL tables are in `quizzes_private`, not the public API schema. Do not expose that schema in Supabase. A dedicated private media bucket is created/checked at startup. Media access requires the owning host session or a short-lived signed grant provided for live/published quiz participation. Media responses use private, no-store caching. A participant can still save/share content already shown to them; do not publish confidential content. Reconnect/refresh renews grants, and a failed custom soundtrack retries a fresh grant with default-music fallback.
+PostgreSQL tables are in `quizzes_private`, not the public API schema. Do not expose that schema in Supabase. A dedicated private media bucket is created/checked at startup. Media access requires the owning host session, the designated site-admin session, or a short-lived signed grant provided for live/published quiz participation. Media responses use private, no-store caching. A participant can still save/share content already shown to them; do not publish confidential content. Reconnect/refresh renews grants, and a failed custom soundtrack retries a fresh grant with default-music fallback.
 
 ## Backups, restore and recovery
 
@@ -100,6 +105,8 @@ For restore, first extract a trusted ZIP and stop application writes. Target a f
 Pause editing/uploads while backing up for application-level consistency. Large collections should use the CLI rather than a browser Blob download. Keep backups off-site and rehearse restoration. Automated backup scheduling is not configured; providers' free quotas also limit backup storage/bandwidth.
 
 ## Tests
+
+For v0.6 verification and boundaries, see [RELEASE-v0.6.md](RELEASE-v0.6.md).
 
 ```sh
 npm test
@@ -141,10 +148,10 @@ Tests use only `TEST_DATABASE_URL`, not your production `DATABASE_URL`. The test
 - Saved quizzes/reports/media survive restarts only with a durable local volume or configured cloud storage.
 - Disconnecting a participant does not free their nickname/player slot during the game; in-tab reconnect restores their score.
 - Login/upload/message limits and basic media signature validation are implemented, not a complete security audit or antivirus scan.
-- Removed attachments remain stored until manually cleaned up. There are no automated retention/deletion tools yet.
-- No email-based reset, differentiated roles within a workspace, sample-synchronized media, dedicated event-sound configuration, native mobile apps, full accessibility audit or managed monitoring/backup scheduling yet.
+- Removed attachments remain stored until manually cleaned up. Manual report/closed-publication deletion is available; automated retention/media cleanup is not. Deletion does not erase downloaded copies or earlier backups.
+- No email-based reset, co-host editing permission levels within a workspace, sample-synchronized media, dedicated event-sound configuration, native mobile apps, full accessibility audit or managed monitoring/backup scheduling yet.
 - Browser-level attempt prevention can be bypassed by clearing cookies, private browsing or another browser/device. This is not identity verification or a proctored-exam system.
-- Self-paced windows close 24 hours after publication, not 24 hours after joining. Only submitted answers persist. Partial attempts count in final results. Free-hosting downtime does not extend deadlines.
+- Self-paced windows initially close 24 hours after publication, not 24 hours after joining; the owner may extend them while still open. Only submitted answers persist. Partial attempts count in final results. Free-hosting downtime does not extend deadlines.
 - Private workspaces share free-tier quotas; inviting a friend does not create an additional free server/database allocation.
 - Never roll back to v0.4 or earlier against a database containing private friend workspaces: those versions do not enforce isolation. See the update guide before any rollback.
 

@@ -59,6 +59,11 @@
           ><button data-view="reports">Reports</button
           ><button data-view="settings">Settings</button>
         </nav>
+        <p id="workspacePrivacyNotice" class="workspace-privacy-notice" hidden>
+          Workspace access: other friends cannot see your content. The
+          designated site administrator can view quizzes and results for
+          oversight.
+        </p>
         <section id="dashboard" class="view active-view">
           <div class="welcome-row">
             <div>
@@ -161,7 +166,7 @@
           <section class="panel publications-panel">
             <div class="page-title">
               <div>
-                <h2>Published for 24 hours</h2>
+                <h2>Published quizzes</h2>
                 <p class="muted">
                   Participants play independently. One attempt per browser;
                   answers release after closing.
@@ -272,17 +277,39 @@
                 Real results from completed games, saved across restarts.
               </p>
             </div>
-            <button class="secondary-btn" id="refreshReports">Refresh</button>
+            <div class="button-row">
+              <button class="secondary-btn" id="refreshReports">Refresh</button
+              ><button class="text-btn" id="clearReports" disabled>
+                Delete all saved reports
+              </button>
+            </div>
           </div>
           <div id="reportList"></div>
         </section>
         <section id="settings" class="view">
+          <div class="panel" id="oversightPanel" hidden>
+            <div class="button-row">
+              <h2>Admin oversight</h2>
+              <button class="secondary-btn" id="refreshOversight">
+                Refresh workspaces
+              </button>
+            </div>
+            <p class="muted">
+              Read-only view of saved quizzes, completed live reports and
+              self-paced results. This does not show passwords, private
+              backup/recovery codes or a live screen recording.
+            </p>
+            <label
+              >Choose workspace<select id="oversightWorkspace"></select
+            ></label>
+            <div id="oversightContent"></div>
+          </div>
           <div class="panel invite-panel">
             <h2>Invite a friend</h2>
             <p>
-              Your friend gets their own private workspace, quizzes and results.
-              You will not share content automatically. This installation's
-              hosting and storage quotas are still shared.
+              Friends have separate workspaces and cannot see each other’s
+              content. The designated site administrator can view all quizzes
+              and results for oversight. Hosting and storage quotas are shared.
             </p>
             <button class="primary-btn" id="createInvite">
               Create private invitation
@@ -788,6 +815,31 @@ Answer: together</pre>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <main id="independentApp" class="independent-shell" hidden></main>
+    <dialog id="extendDialog" class="import-dialog">
+      <button
+        class="modal-close"
+        id="closeExtendDialog"
+        aria-label="Close deadline extension"
+      >
+        ×
+      </button>
+      <form id="extendPublicationForm">
+        <h2>Extend closing time</h2>
+        <p id="extendCurrent" class="muted"></p>
+        <label
+          >New closing date and time<input
+            type="datetime-local"
+            id="extendDeadline"
+            required
+        /></label>
+        <p class="muted">
+          Uses your device’s local time zone. Only open quizzes can be extended,
+          up to one year ahead. Progress and the same participant link are kept.
+        </p>
+        <p id="extendStatus" role="status"></p>
+        <button class="primary-btn" type="submit">Save new deadline</button>
+      </form>
+    </dialog>
     <dialog id="publicationDialog" class="import-dialog">
       <button
         class="modal-close"

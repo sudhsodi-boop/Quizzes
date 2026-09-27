@@ -6,6 +6,7 @@ module.exports = function workspaceFeatures({
   user,
   requireUser,
   owns,
+  isSiteAdmin,
   hash,
   passwordHash,
   cookie,
@@ -30,7 +31,8 @@ module.exports = function workspaceFeatures({
   }
   async function mediaAccess(req, id) {
     const host = await user(req);
-    if (host && (await owns("media", id, host.id))) return true;
+    if (host && (isSiteAdmin(host) || (await owns("media", id, host.id))))
+      return true;
     const u = new URL(req.url, "http://local");
     const until = Number(u.searchParams.get("until"));
     const grant = u.searchParams.get("grant") || "";
@@ -85,6 +87,8 @@ module.exports = function workspaceFeatures({
       closed,
       total: questions.length,
       rounds: quiz.rounds.length,
+      music: !closed ? mediaURL(quiz.music) : "",
+      serverNow: Date.now(),
     };
     if (state) {
       result.attempt = {
@@ -118,6 +122,48 @@ module.exports = function workspaceFeatures({
     return pub;
   }
   async function handle(req, res, p) {
+    if (p.startsWith("/api/oversight")) {
+      const host = await requireUser(req);
+      if (!isSiteAdmin(host)) fail("Site administrator access required.", 403);
+      if (req.method !== "GET") fail("Admin oversight is read-only.", 405);
+      if (p === "/api/oversight/workspaces")
+        return send(
+          res,
+          await db
+            .prepare("SELECT id,email,organization FROM admins ORDER BY email")
+            .all(),
+        );
+      const match = p.match(/^\/api\/oversight\/workspaces\/([a-f0-9-]+)$/);
+      if (!match) fail("Not found.", 404);
+      const owner = await db
+        .prepare("SELECT id,email,organization FROM admins WHERE id=?")
+        .get(match[1]);
+      if (!owner) fail("Workspace not found.", 404);
+      const result = { owner };
+      for (const kind of ["quizzes", "reports"])
+        result[kind] = (
+          await db
+            .prepare(
+              "SELECT document FROM " +
+                kind +
+                " WHERE id IN (SELECT item_id FROM ownership WHERE kind=? AND owner_id=?)",
+            )
+            .all(kind, owner.id)
+        ).map((r) => JSON.parse(r.document));
+      result.publications = (
+        await db
+          .prepare(
+            "SELECT id,document,created,closes FROM publications WHERE owner_id=? ORDER BY created DESC",
+          )
+          .all(owner.id)
+      ).map((r) => ({
+        id: r.id,
+        title: JSON.parse(r.document).title,
+        created: Number(r.created),
+        closes: Number(r.closes),
+      }));
+      return send(res, result);
+    }
     if (p === "/api/invitations/redeem" && req.method === "POST") {
       rate("redeem:" + peer(req), 8, 15 * 60 * 1000);
       const x = await data(req);
@@ -224,17 +270,59 @@ module.exports = function workspaceFeatures({
       }
     }
     const own = p.match(
-      /^\/api\/publications\/([a-f0-9]{32})(?:\/(close|results))?$/,
+      /^\/api\/publications\/([a-f0-9]{32})(?:\/(close|results|extend))?$/,
     );
     if (own) {
       const host = await requireUser(req),
         pub = await getPub(own[1]);
-      if (pub.owner_id !== host.id) fail("Published quiz not found.", 404);
-      if (own[2] === "close" && req.method === "POST") {
-        await db
-          .prepare("UPDATE publications SET closes=? WHERE id=?")
-          .run(Math.min(Date.now(), Number(pub.closes)), pub.id);
-        return send(res, { ok: true });
+      if (
+        pub.owner_id !== host.id &&
+        !(own[2] === "results" && req.method === "GET" && isSiteAdmin(host))
+      )
+        fail("Published quiz not found.", 404);
+      if (
+        (["close", "extend"].includes(own[2]) && req.method === "POST") ||
+        (!own[2] && req.method === "DELETE")
+      ) {
+        const x = req.method === "POST" ? await data(req) : {};
+        let closes;
+        await db.withTransaction(async (tx) => {
+          const current = await tx
+            .prepare("SELECT * FROM publications WHERE id=?" + lock)
+            .get(pub.id);
+          if (!current || current.owner_id !== host.id)
+            fail("Published quiz not found.", 404);
+          const now = Date.now();
+          if (req.method === "DELETE") {
+            if (Number(current.closes) > now)
+              fail("Close this publication before deleting its results.", 409);
+            await tx
+              .prepare("DELETE FROM attempts WHERE publication_id=?")
+              .run(pub.id);
+            await tx.prepare("DELETE FROM publications WHERE id=?").run(pub.id);
+          } else {
+            if (own[2] === "extend") {
+              if (Number(current.closes) <= now)
+                fail(
+                  "Closed quizzes cannot be reopened because answers may have been revealed.",
+                  409,
+                );
+              if (
+                !Number.isSafeInteger(x.closes) ||
+                x.closes <= Number(current.closes) ||
+                x.closes > now + 365 * 24 * 60 * 60 * 1000
+              )
+                fail(
+                  "Choose a later deadline, no more than one year from now.",
+                );
+              closes = x.closes;
+            } else closes = Math.min(now, Number(current.closes));
+            await tx
+              .prepare("UPDATE publications SET closes=? WHERE id=?")
+              .run(closes, pub.id);
+          }
+        });
+        return send(res, { ok: true, closes });
       }
       if (own[2] === "results" && req.method === "GET") {
         const attempts = await db

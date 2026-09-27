@@ -3,7 +3,7 @@ module.exports = defineConfig({
   testDir: "./tests",
   testMatch: "browser.spec.js",
   workers: 1,
-  timeout: 60000,
+  timeout: 90000,
   use: { baseURL: "http://localhost:4182", headless: true },
   webServer: {
     command: "node server.js",
@@ -20,6 +20,7 @@ module.exports = defineConfig({
       RENDER: "",
       INITIAL_ADMIN_EMAIL: "",
       INITIAL_ADMIN_PASSWORD: "",
+      SITE_ADMIN_EMAIL: "browser@example.test",
     },
   },
   reporter: "list",

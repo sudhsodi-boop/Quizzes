@@ -3230,3 +3230,41 @@ textarea:focus-visible {
     min-width: 0;
   }
 }
+
+/* v0.6 workspace oversight and independent soundtrack */
+#oversightPanel {
+  margin-bottom: 24px;
+}
+#oversightWorkspace {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  margin: 12px 0 20px;
+  padding: 12px;
+}
+#oversightContent .report-detail {
+  padding: 16px 0;
+  border-bottom: 1px solid #e5dcec;
+  overflow-wrap: anywhere;
+}
+#oversightContent .publication-card {
+  flex-wrap: wrap;
+}
+.publication-music {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 22px;
+  color: #624b82;
+}
+
+.workspace-privacy-notice {
+  padding: 10px 14px;
+  margin: 16px 0 22px;
+  border-radius: 10px;
+  background: #f1ebfa;
+  color: #5b457e;
+  font-size: 12px;
+  line-height: 1.6;
+}

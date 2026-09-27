@@ -71,7 +71,9 @@ async function api(url, options = {}) {
       account = null;
       $("#authButton").textContent = "Host sign in";
     }
-    throw Error(value.error || "Request failed");
+    throw Object.assign(Error(value.error || "Request failed"), {
+      status: res.status,
+    });
   }
   return value;
 }
@@ -187,17 +189,21 @@ $("#authForm").onsubmit = async (event) => {
   }
 };
 async function loadWorkspace() {
+  const ownerId = account?.id;
   const storage = await api("/api/storage-status");
   $("#storageSummary").textContent = storage.persistentCloud
     ? "PostgreSQL database and private Supabase media. Stored outside the app server."
     : "Local SQLite and media files. Use persistent cloud storage before deploying on a free host.";
-  [quizzes, reports] = await Promise.all([
+  const workspaceData = await Promise.all([
     api("/api/quizzes"),
     api("/api/reports"),
   ]);
+  if (account?.id !== ownerId) return;
+  [quizzes, reports] = workspaceData;
   renderWorkspace();
 }
 function renderWorkspace() {
+  $("#workspacePrivacyNotice").hidden = !account;
   document.dispatchEvent(new Event("quizzes:workspace"));
   const sessions = reports.length,
     players = reports.reduce((n, r) => n + r.players, 0),
@@ -233,14 +239,15 @@ function renderWorkspace() {
           `<article class="library-card"><div class="quiz-thumb violet">✦</div><b>${e(q.title)}</b><span>${summary(q)}</span><p class="muted quiz-description">${e(q.description || "A new moment for your community.")}</p><div class="button-row"><button class="primary-btn" data-launch="${q.id}">Host game ↗</button><button class="secondary-btn" data-publish="${q.id}">Publish 24h</button><button class="secondary-btn" data-edit="${q.id}">Edit</button><button class="text-btn" data-delete="${q.id}" aria-label="Delete ${e(q.title)}">Delete</button></div></article>`,
       )
       .join("");
+  $("#clearReports").disabled = !account || !reports.length;
   $("#reportList").innerHTML = reports.length
     ? reports
         .map(
           (r) =>
-            `<details class="panel report-detail"><summary><div><b>${e(r.title)}</b><p class="muted">${e(new Date(r.ended).toLocaleString())} · ${r.players} players · ${r.questionsPlayed}/${r.questionCount} questions</p></div><span class="pill">VIEW RESULTS ↓</span></summary><p class="muted">${e(r.reason)} · Code ${e(r.code)}</p>${leaderboardHTML(r.leaderboard)}<button class="outline-btn" data-export="${r.id}">Download CSV</button></details>`,
+            `<details class="panel report-detail"><summary><div><b>${e(r.title)}</b><p class="muted">${e(new Date(r.ended).toLocaleString())} · ${r.players} players · ${r.questionsPlayed}/${r.questionCount} questions</p></div><span class="pill">VIEW RESULTS ↓</span></summary><p class="muted">${e(r.reason)} · Code ${e(r.code)}</p>${leaderboardHTML(r.leaderboard)}<button class="outline-btn" data-export="${r.id}">Download CSV</button> <button class="text-btn" data-delete-report="${r.id}">Delete report</button></details>`,
         )
         .join("")
-    : `<div class="panel empty-state"><h2>Every gathering has a story.</h2><p>${account ? "End your first live game to see its results here." : "Sign in to see your organization’s reports."}</p></div>`;
+    : `<div class="panel empty-state"><h2>Every gathering has a story.</h2><p>${account ? "No saved reports. Completed live games appear here." : "Sign in to see your organization’s reports."}</p></div>`;
   $("#organizationSetting").textContent = account
     ? `${account.organization} · ${account.email}`
     : "Sign in to manage your workspace.";
@@ -277,11 +284,43 @@ document.addEventListener("click", async (event) => {
       showToast(err.message);
     }
   }
+  if (
+    button.dataset.deleteReport &&
+    confirm(
+      "Permanently delete this saved report? This cannot be undone. Your saved quiz is kept; existing backup files are not changed.",
+    )
+  ) {
+    try {
+      await api("/api/reports/" + button.dataset.deleteReport, {
+        method: "DELETE",
+      });
+      await loadWorkspace();
+      showToast("Report deleted");
+    } catch (err) {
+      showToast(err.message);
+    }
+  }
   if (button.dataset.export)
     exportReport(reports.find((r) => r.id === button.dataset.export));
 });
 $("#launchBtn").onclick = () => {
   if (requireHost()) showView("quizzes");
+};
+$("#clearReports").onclick = async () => {
+  if (
+    !requireHost() ||
+    !confirm(
+      "Permanently delete ALL saved live reports in your workspace? This cannot be undone. Saved quizzes, self-paced publications and existing backups are kept.",
+    )
+  )
+    return;
+  try {
+    await api("/api/reports", { method: "DELETE" });
+    await loadWorkspace();
+    showToast("Saved live reports deleted");
+  } catch (err) {
+    showToast(err.message);
+  }
 };
 $("#refreshReports").onclick = async () => {
   if (!requireHost()) return;

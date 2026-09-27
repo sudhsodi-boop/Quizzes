@@ -475,6 +475,12 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await page.locator("#moveSelected").click();
   await expect(page.locator(".round-section")).toHaveCount(2);
   await page.locator(".round-title").nth(1).fill("Challenge");
+  await page.locator("#musicFile").setInputFiles({
+    name: "independent-music.wav",
+    mimeType: "audio/wav",
+    buffer: wav,
+  });
+  await expect(page.locator("#musicPreview audio")).toBeVisible();
   await page.screenshot({
     path: "test-artifacts/v05-round-editor.png",
     animations: "disabled",
@@ -498,6 +504,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   });
   const asyncPlayer = await asyncContext.newPage();
   asyncPlayer.on("pageerror", (err) => errors.push(err.message));
+  await asyncPlayer.clock.install();
   await asyncPlayer.goto(publishedLink);
   await asyncPlayer
     .locator("#independentApp")
@@ -508,6 +515,39 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     asyncPlayer.getByRole("heading", { name: "Choose prime numbers" }),
   ).toBeVisible();
   await asyncPlayer.locator('input[name="option"][value="0"]').check();
+  await expect
+    .poll(() =>
+      asyncPlayer.locator("#publishedBackground").evaluate((a) => !a.paused),
+    )
+    .toBe(true);
+  const beforeExtension = await asyncPlayer
+    .locator(".publication-deadline")
+    .textContent();
+  await publication.getByRole("button", { name: "Extend time" }).click();
+  await page.getByRole("button", { name: "Save new deadline" }).click();
+  await expect(page.locator("#extendDialog")).not.toBeVisible();
+  await asyncPlayer.clock.fastForward(30001);
+  await expect(asyncPlayer.locator(".publication-deadline")).not.toHaveText(
+    beforeExtension,
+  );
+  await expect(
+    asyncPlayer.locator('input[name="option"][value="0"]'),
+  ).toBeChecked();
+  const trackSource = await asyncPlayer
+    .locator("#publishedBackground")
+    .getAttribute("src");
+  await asyncPlayer
+    .locator("#publishedBackground")
+    .evaluate((a) => a.dispatchEvent(new Event("error")));
+  await expect
+    .poll(() => asyncPlayer.locator("#publishedBackground").getAttribute("src"))
+    .not.toBe(trackSource);
+  await expect
+    .poll(() =>
+      asyncPlayer.locator("#publishedBackground").evaluate((a) => !a.paused),
+    )
+    .toBe(true);
+
   await asyncPlayer.getByRole("button", { name: "Submit & continue" }).click();
   await asyncPlayer.reload();
   await expect(
@@ -606,6 +646,82 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+  // v0.6 administrator view and deliberate deletion of saved results.
+  await page.locator("#closeGame").click();
+  await friendPage.evaluate(async () => {
+    const q = {
+      title: "Friend lesson",
+      description: "For admin oversight",
+      music: "",
+      rounds: [
+        {
+          title: "",
+          questions: [
+            {
+              type: "choice",
+              text: "Can the administrator review this?",
+              options: ["Yes", "No"],
+              correct: 0,
+              seconds: 20,
+              points: 1000,
+              media: "",
+            },
+          ],
+        },
+      ],
+    };
+    const r = await fetch("/api/quizzes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(q),
+    });
+    if (!r.ok) throw Error("Unable to create test lesson");
+  });
+  await friendPage.reload();
+  await friendPage.locator('.nav-item[data-view="settings"]').click();
+  await expect(friendPage.locator("#workspacePrivacyNotice")).toContainText(
+    "administrator",
+  );
+  await expect(friendPage.locator("#oversightPanel")).toBeHidden();
+  await page.locator('.nav-item[data-view="settings"]').click();
+  await expect(page.locator("#oversightPanel")).toBeVisible();
+  await page.locator("#refreshOversight").click();
+  await page.locator("#oversightWorkspace").selectOption({
+    label: "Friend private workspace · friend-browser@example.test",
+  });
+  await expect(page.locator("#oversightContent")).toContainText(
+    "Friend lesson",
+  );
+  await page.locator("#oversightContent summary").first().click();
+  await expect(page.locator("#oversightContent")).toContainText(
+    "Can the administrator review this?",
+  );
+  await expect(page.locator("#oversightContent")).not.toContainText(
+    "After-school participant",
+  );
+  await page.locator("#oversightPanel").screenshot({
+    path: "test-artifacts/v06-admin-oversight.png",
+    animations: "disabled",
+  });
+  await page.locator('.nav-item[data-view="reports"]').click();
+  const reportsBefore = await page
+    .locator("#reportList .report-detail")
+    .count();
+  await page.locator("#reportList summary").first().click();
+  await page.locator("[data-delete-report]").first().click();
+  await expect(page.locator("#reportList .report-detail")).toHaveCount(
+    reportsBefore - 1,
+  );
+  await page.locator("#clearReports").click();
+  await expect(page.locator("#reportList .report-detail")).toHaveCount(0);
+  await page.locator('.nav-item[data-view="quizzes"]').click();
+  await publication.getByRole("button", { name: "Delete results" }).click();
+  await expect(publication).toHaveCount(0);
+  await expect(newCard).toBeVisible();
+  await asyncPlayer.reload();
+  await expect(
+    asyncPlayer.getByRole("heading", { name: "Unable to open quiz" }),
+  ).toBeVisible();
   await asyncContext.close();
   await friendContext.close();
   expect(errors).toEqual([]);

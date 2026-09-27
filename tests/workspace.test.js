@@ -53,6 +53,7 @@ test(
           SUPABASE_SERVICE_KEY: "",
           INITIAL_ADMIN_EMAIL: "",
           INITIAL_ADMIN_PASSWORD: "",
+          SITE_ADMIN_EMAIL: "owner@private.test",
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -641,6 +642,346 @@ test(
               })
             ).res.status,
             400,
+          );
+        },
+      );
+      await t.test(
+        "designated admin oversight is read-only and never available to friends",
+        async () => {
+          assert.equal(
+            (await req("/api/session", "GET", undefined, owner)).value.user
+              .isSiteAdmin,
+            true,
+          );
+          assert.equal(
+            (await req("/api/session", "GET", undefined, friend)).value.user
+              .isSiteAdmin,
+            false,
+          );
+          assert.equal(
+            (await req("/api/oversight/workspaces")).res.status,
+            401,
+          );
+          assert.equal(
+            (await req("/api/oversight/workspaces", "GET", undefined, friend))
+              .res.status,
+            403,
+          );
+          const friendId = (await req("/api/session", "GET", undefined, friend))
+            .value.user.id;
+          const wav = Buffer.alloc(8044);
+          wav.write("RIFF");
+          wav.writeUInt32LE(8036, 4);
+          wav.write("WAVEfmt ", 8);
+          wav.writeUInt32LE(16, 16);
+          wav.writeUInt16LE(1, 20);
+          wav.writeUInt16LE(1, 22);
+          wav.writeUInt32LE(8000, 24);
+          wav.writeUInt32LE(8000, 28);
+          wav.writeUInt16LE(1, 32);
+          wav.writeUInt16LE(8, 34);
+          wav.write("data", 36);
+          wav.writeUInt32LE(8000, 40);
+          wav.fill(128, 44);
+          const friendMusic = (await req("/api/media", "POST", wav, friend))
+            .value.url;
+          const fq = JSON.parse(JSON.stringify(quiz));
+          fq.title = "Friend-only quiz";
+          fq.music = friendMusic;
+          fq.rounds[0].questions[0].media = "";
+          const saved = (await req("/api/quizzes", "POST", fq, friend)).value;
+          const fp = (
+            await req("/api/publications", "POST", { quizId: saved.id }, friend)
+          ).value;
+          const live = await socket(friend);
+          live.send("create_game", { quizId: saved.id });
+          await live.wait("game_created");
+          live.send("end_game");
+          await live.wait("game_ended");
+          const view = (
+            await req(
+              "/api/oversight/workspaces/" + friendId,
+              "GET",
+              undefined,
+              owner,
+            )
+          ).value;
+          assert.equal(view.quizzes[0].title, "Friend-only quiz");
+          assert.equal(view.reports.length, 1);
+          assert.equal(view.publications.length, 1);
+          assert.equal(view.owner.password, undefined);
+          assert.equal(
+            (await req(friendMusic, "GET", undefined, owner)).res.status,
+            200,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fp.id + "/results",
+                "GET",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            200,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fp.id + "/close",
+                "POST",
+                {},
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fp.id + "/extend",
+                "POST",
+                { closes: fp.closes + 86400000 },
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fp.id,
+                "DELETE",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/reports/" + view.reports[0].id,
+                "DELETE",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (await req("/api/quizzes/" + saved.id, "PUT", fq, owner)).res
+              .status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/oversight/workspaces/" + friendId,
+                "POST",
+                {},
+                owner,
+              )
+            ).res.status,
+            405,
+          );
+          const guest = (await req("/api/published/" + fp.id)).value;
+          assert.match(guest.music, /grant=/);
+          assert.equal((await req(guest.music)).res.status, 200);
+          const ownList = (await req("/api/quizzes", "GET", undefined, owner))
+            .value;
+          assert.ok(!ownList.some((q) => q.id === saved.id));
+          await req("/api/reports", "DELETE", undefined, owner);
+          assert.equal(
+            (await req("/api/reports", "GET", undefined, owner)).value.length,
+            0,
+          );
+          assert.equal(
+            (await req("/api/reports", "GET", undefined, friend)).value.length,
+            1,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/reports/" + view.reports[0].id,
+                "DELETE",
+                undefined,
+                friend,
+              )
+            ).res.status,
+            200,
+          );
+          assert.equal(
+            (await req("/api/reports", "GET", undefined, friend)).value.length,
+            0,
+          );
+        },
+      );
+      await t.test(
+        "extensions retain attempts, reject reopening and serialize against closing; deletion is owner-scoped",
+        async () => {
+          const fresh = (
+            await req("/api/publications", "POST", { quizId }, owner)
+          ).value;
+          await req(
+            "/api/published/" + fresh.id + "/join",
+            "POST",
+            { name: "Keep my progress" },
+            visitor,
+          );
+          await req(
+            "/api/published/" + fresh.id + "/answer",
+            "POST",
+            { index: 0, answer: [0] },
+            visitor,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/extend",
+                "POST",
+                { closes: fresh.closes + 86400000 },
+                friend,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/extend",
+                "POST",
+                { closes: fresh.closes - 1 },
+                owner,
+              )
+            ).res.status,
+            400,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/extend",
+                "POST",
+                { closes: Date.now() + 366 * 86400000 },
+                owner,
+              )
+            ).res.status,
+            400,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/extend",
+                "POST",
+                { closes: fresh.closes + 86400000 },
+                owner,
+              )
+            ).res.status,
+            200,
+          );
+          const progress = (
+            await req("/api/published/" + fresh.id, "GET", undefined, visitor)
+          ).value;
+          assert.equal(progress.closes, fresh.closes + 86400000);
+          assert.equal(progress.attempt.cursor, 1);
+          assert.equal(progress.attempt.score, undefined);
+          assert.equal(progress.solutions, undefined);
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id,
+                "DELETE",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            409,
+          );
+          await stop();
+          await start();
+          const resumed = (
+            await req("/api/published/" + fresh.id, "GET", undefined, visitor)
+          ).value;
+          assert.equal(resumed.closes, fresh.closes + 86400000);
+          assert.equal(resumed.attempt.cursor, 1);
+          assert.equal(resumed.solutions, undefined);
+          await Promise.all([
+            req(
+              "/api/publications/" + fresh.id + "/extend",
+              "POST",
+              { closes: fresh.closes + 2 * 86400000 },
+              owner,
+            ),
+            req("/api/publications/" + fresh.id + "/close", "POST", {}, owner),
+          ]);
+          assert.equal(
+            (await req("/api/published/" + fresh.id, "GET", undefined, visitor))
+              .value.closed,
+            true,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/extend",
+                "POST",
+                { closes: fresh.closes + 3 * 86400000 },
+                owner,
+              )
+            ).res.status,
+            409,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id,
+                "DELETE",
+                undefined,
+                friend,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id,
+                "DELETE",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            200,
+          );
+          assert.equal(
+            (await req("/api/published/" + fresh.id, "GET", undefined, visitor))
+              .res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/publications/" + fresh.id + "/results",
+                "GET",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          assert.ok(
+            (await req("/api/quizzes", "GET", undefined, owner)).value.some(
+              (q) => q.id === quizId,
+            ),
+          );
+          await stop();
+          await start();
+          assert.equal(
+            (await req("/api/reports", "GET", undefined, owner)).value.length,
+            0,
+          );
+          assert.equal(
+            (await req("/api/published/" + fresh.id)).res.status,
+            404,
           );
         },
       );

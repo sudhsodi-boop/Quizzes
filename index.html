@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta name="theme-color" content="#6d5dfc" />
+    <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
@@ -69,7 +69,11 @@
                 share.
               </p>
             </div>
-            <button class="primary-btn" data-new>＋ Create quiz</button>
+            <div class="button-row">
+              <button class="secondary-btn" data-import>
+                ↑ Import questions</button
+              ><button class="primary-btn" data-new>＋ Create quiz</button>
+            </div>
           </div>
           <div class="hero-card">
             <div class="hero-copy">
@@ -147,7 +151,11 @@
                 One quick round or a whole evening of discovery.
               </p>
             </div>
-            <button class="primary-btn" data-new>＋ Create quiz</button>
+            <div class="button-row">
+              <button class="secondary-btn" data-import>
+                ↑ Import questions</button
+              ><button class="primary-btn" data-new>＋ Create quiz</button>
+            </div>
           </div>
           <div class="library-grid" id="library"></div>
         </section>
@@ -169,6 +177,20 @@
                 </button>
               </div>
             </div>
+            <div id="importReview" class="import-review" hidden>
+              <h2>Review your imported quiz</h2>
+              <p id="importSummary"></p>
+              <ul id="importWarnings"></ul>
+              <details>
+                <summary>Compare with the extracted source</summary>
+                <pre id="importSource"></pre>
+              </details>
+              <label class="review-confirm"
+                ><input type="checkbox" id="importReviewed" disabled /> I have
+                checked every question and correct answer against the
+                document.</label
+              >
+            </div>
             <div class="panel editor-basics">
               <label
                 >Quiz title<input
@@ -185,9 +207,12 @@
               </label>
               <div class="music-row">
                 <div>
-                  <label for="musicFile">Lobby music · optional</label>
+                  <label for="musicFile"
+                    >Custom background music · optional</label
+                  >
                   <p class="muted">
-                    MP3, WAV or OGG · up to 10 MB · host screen only
+                    Default music plays automatically on host and player
+                    devices. Upload MP3, WAV or OGG (up to 10 MB) to replace it.
                   </p>
                   <input
                     type="file"
@@ -244,7 +269,8 @@
               <div>
                 <b>Images, audio & music</b>
                 <p>
-                  Add question media and lobby music in the quiz editor.
+                  Default background music plays on host and player devices. Add
+                  your own soundtrack and question media in the quiz editor.
                   Playback is started by the host or player.
                 </p>
               </div>
@@ -464,12 +490,12 @@
         </button>
         <div class="game-head">
           <div>
-            <div class="eyebrow">LIVE GAME ROOM</div>
+            <div class="eyebrow">QUIZZES · LIVE GAME SHOW</div>
             <h2 id="gameTitle">Your community, connected</h2>
             <p class="muted" id="hostConnection">Connecting…</p>
           </div>
           <div class="join-code">
-            <span>JOIN CODE</span><b id="hostCode">—</b
+            <span>JOIN THE FUN · GAME CODE</span><b id="hostCode">—</b
             ><button class="text-btn" id="copyJoin">Copy join link</button>
           </div>
         </div>
@@ -477,7 +503,7 @@
           <div class="game-stage">
             <div class="stage-top">
               <span class="pill" id="hostRound">LOBBY</span
-              ><span class="live-dot" id="hostTimer">READY</span>
+              ><span class="live-dot" id="hostTimer" role="timer">READY</span>
             </div>
             <div class="stage-question">
               <span class="question-number" id="hostQuestionNumber"></span>
@@ -490,6 +516,11 @@
               <div id="hostResults"></div>
             </div>
             <div id="lobbyMusic"></div>
+            <div
+              class="sound-controls"
+              id="hostSound"
+              data-sound-controls
+            ></div>
             <div class="stage-controls">
               <a
                 class="secondary-btn"
@@ -563,8 +594,15 @@
             >
           </form>
           <div id="playerQuestion" hidden>
+            <div
+              class="sound-controls"
+              id="playerSound"
+              data-sound-controls
+            ></div>
+            <div id="playerMusic"></div>
             <div class="player-meta">
-              <span id="playerRound">LOBBY</span><b id="playerTimer"></b>
+              <span id="playerRound">LOBBY</span
+              ><b id="playerTimer" role="timer"></b>
             </div>
             <h2 id="playerTitle">You’re in!</h2>
             <p class="muted" id="playerHint">Waiting for your host to start.</p>
@@ -594,7 +632,79 @@
     <button id="returnToGame" class="primary-btn return-game" hidden>
       Return to live game →
     </button>
+    <dialog
+      id="importDialog"
+      class="import-dialog"
+      aria-labelledby="importHeading"
+    >
+      <button
+        type="button"
+        id="closeImport"
+        class="modal-close"
+        aria-label="Close document import"
+      >
+        ×
+      </button>
+      <div class="eyebrow">FROM DOCUMENT TO GAME NIGHT</div>
+      <h2 id="importHeading">Import your questions</h2>
+      <p>
+        Turn existing questions and marked answers into an editable quiz.
+        Nothing is saved until you review it.
+      </p>
+      <form id="importForm">
+        <label
+          >Upload a document<input
+            id="documentFile"
+            type="file"
+            accept=".pdf,.docx,.txt"
+        /></label>
+        <p class="muted">
+          Text PDF (up to 50 pages), Word .docx or UTF-8 .txt · maximum 5 MB. No
+          scans or photographs yet. Use explicit question numbers and A)–F)
+          labels; automatic Word list numbering may not survive extraction.
+        </p>
+        <label
+          >Or paste your questions<textarea
+            id="documentText"
+            rows="8"
+            maxlength="200000"
+            placeholder="1. What is the capital of France?&#10;A) Rome&#10;B) Paris&#10;Answer: B"
+          ></textarea>
+        </label>
+        <details>
+          <summary>See the supported format</summary>
+          <pre>
+Title: Community quiz
+Round 1
+1. What is the capital of France?
+A) Rome
+B) Paris
+Answer: B
+
+2. The Earth orbits the Sun. (True/False)
+Answer: True
+
+3. Finish the phrase: Better ____.
+Answer: together</pre>
+          <p>
+            Alternatively, add an “Answer key:” section with lines such as “1.
+            B”. Missing or conflicting answers are left for you to select—not
+            guessed.
+          </p>
+        </details>
+        <p class="muted">
+          Processed on your Quizzes server. No paid AI or external document
+          service. Files are not retained; only the quiz you choose to save is
+          stored.
+        </p>
+        <p id="importStatus" role="status"></p>
+        <button type="submit" class="primary-btn full-btn" id="importSubmit">
+          Create draft from document
+        </button>
+      </form>
+    </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/quiz-sound.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>

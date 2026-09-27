@@ -34,11 +34,83 @@ const messages = {
     "SUPABASE_MEDIA_BUCKET must use lowercase letters, digits and hyphens only; use quizzes-media for this app.",
   HOST_SETUP_CONFIG:
     "Check INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD and ORGANIZATION_NAME. Use a valid email, a 12-128 character host password and a nonempty organization name.",
+  HOST_EMAIL_MISSING:
+    "INITIAL_ADMIN_EMAIL is missing or blank in the running app. Set this exact variable on the Quizzes Render web service and save/deploy the change.",
+  HOST_EMAIL_INVALID:
+    "INITIAL_ADMIN_EMAIL does not pass the app's email-format check. Enter a plain email address in Render, not a display name or a mailto link.",
+  HOST_EMAIL_TOO_LONG:
+    "INITIAL_ADMIN_EMAIL exceeds the 254-character limit. Check the value of this exact variable in Render.",
+  HOST_PASSWORD_MISSING:
+    "INITIAL_ADMIN_PASSWORD is missing or empty in the running app. This is the host-login password, not DATABASE_PASSWORD. Set it on the Render web service before first account creation.",
+  HOST_PASSWORD_TOO_SHORT:
+    "INITIAL_ADMIN_PASSWORD is shorter than the required 12 characters. Use a unique 12-128 character host-login password; leave the working database password unchanged.",
+  HOST_PASSWORD_TOO_LONG:
+    "INITIAL_ADMIN_PASSWORD exceeds the 128-character limit. Check that this field contains only the intended host-login password, not a connection string or certificate.",
+  HOST_ORGANIZATION_MISSING:
+    "ORGANIZATION_NAME is missing or blank in the running app. Set this exact variable on the Render web service. Quizzes is a valid value.",
+  HOST_ORGANIZATION_TOO_LONG:
+    "ORGANIZATION_NAME exceeds the 120-character limit. Set it to your organization name only; Quizzes is a valid value.",
   MEDIA_BUCKET_PUBLIC:
     "The configured media bucket is public. Make this dedicated bucket private, or configure a new private bucket.",
   MEDIA_RESPONSE_INVALID:
     "The media service returned an unexpected response. Verify SUPABASE_URL points to the intended project and that the project is running.",
 };
+// Values are returned only to the local account-creation code. Diagnostics emit
+// a fixed variable name and an allowlisted status, never values or lengths.
+function validateHostSetup(env = process.env, logger = console.log) {
+  const email =
+    typeof env.INITIAL_ADMIN_EMAIL === "string"
+      ? env.INITIAL_ADMIN_EMAIL.trim().toLowerCase()
+      : "";
+  const password =
+    typeof env.INITIAL_ADMIN_PASSWORD === "string"
+      ? env.INITIAL_ADMIN_PASSWORD
+      : "";
+  const organization =
+    typeof env.ORGANIZATION_NAME === "string"
+      ? env.ORGANIZATION_NAME.trim()
+      : "";
+  const checks = [
+    {
+      name: "INITIAL_ADMIN_EMAIL",
+      status: !email
+        ? "MISSING"
+        : email.length > 254
+          ? "TOO_LONG"
+          : !/^\S+@\S+\.\S+$/.test(email)
+            ? "INVALID"
+            : "OK",
+      prefix: "HOST_EMAIL",
+    },
+    {
+      name: "INITIAL_ADMIN_PASSWORD",
+      status: !password
+        ? "MISSING"
+        : password.length < 12
+          ? "TOO_SHORT"
+          : password.length > 128
+            ? "TOO_LONG"
+            : "OK",
+      prefix: "HOST_PASSWORD",
+    },
+    {
+      name: "ORGANIZATION_NAME",
+      status: !organization
+        ? "MISSING"
+        : organization.length > 120
+          ? "TOO_LONG"
+          : "OK",
+      prefix: "HOST_ORGANIZATION",
+    },
+  ];
+  logger("Host setup validation v2 (values are never logged)");
+  for (const check of checks)
+    logger(`Host setup check [${check.name}]: ${check.status}`);
+  const failed = checks.find((check) => check.status !== "OK");
+  if (failed)
+    throw startupError(`${failed.prefix}_${failed.status}`, "HOST_SETUP");
+  return { email, password, organization };
+}
 function startupError(code, stage, cause) {
   const error = new Error("Startup configuration check failed.");
   error.code = code;
@@ -215,6 +287,7 @@ async function checkStartup(
   return healthy;
 }
 module.exports = {
+  validateHostSetup,
   startupError,
   describeStartupFailure,
   logStartupFailure,

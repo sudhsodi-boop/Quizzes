@@ -17,6 +17,7 @@ const {
 } = loadStartupModule("./storage", "DATABASE_CONFIG");
 const mediaStore = loadStartupModule("./media-store", "MEDIA_CONFIG");
 const { writeBackup } = require("./backup-service");
+const { importDocument } = require("./quiz-import");
 const PORT = Number(process.env.PORT || 4173);
 const games = new Map();
 const limits = new Map();
@@ -206,7 +207,10 @@ async function validateQuiz(input, id = crypto.randomUUID()) {
         question.options = question.options.map((a) =>
           bounded(a, 200, "answer choice"),
         );
-        question.correct = Number(x.correct);
+        question.correct =
+          x.correct === null || x.correct === undefined || x.correct === ""
+            ? -1
+            : Number(x.correct);
         if (
           !Number.isInteger(question.correct) ||
           question.correct < 0 ||
@@ -479,6 +483,24 @@ const server = http.createServer(async (req, res) => {
           },
         );
       }
+      if (p === "/api/quiz-import" && req.method === "POST") {
+        rate("document-import:" + admin.id, 30, 60 * 60 * 1000);
+        let filename;
+        try {
+          filename = decodeURIComponent(
+            String(req.headers["x-file-name"] || "questions.txt"),
+          );
+        } catch {
+          fail("Invalid document filename.");
+        }
+        const extension = filename.split(".").at(-1).toLowerCase();
+        const result = await importDocument(
+          await body(req, 5 * 1024 * 1024),
+          extension,
+          filename.replace(/\.[^.]+$/, "").slice(0, 120),
+        );
+        return json(res, 200, result);
+      }
       if (p === "/api/quizzes" && req.method === "GET")
         return json(
           res,
@@ -559,6 +581,7 @@ const server = http.createServer(async (req, res) => {
       "/index.html": "index.html",
       "/styles.css": "styles.css",
       "/app.js": "app.js",
+      "/quiz-sound.js": "quiz-sound.js",
     };
     if (!files[p] || !["GET", "HEAD"].includes(req.method))
       fail("Not found", 404);
@@ -898,6 +921,7 @@ wss.on("connection", (ws, req) => {
         ws.playerId = p.id;
         g.clients.add(ws);
         sync(ws, g, "joined", {
+          music: g.quiz.music,
           playerId: p.id,
           playerToken: p.resumeToken,
           answered: p.answered,

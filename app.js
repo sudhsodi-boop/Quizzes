@@ -11,6 +11,7 @@ const escapeHTML = (v) =>
   );
 const e = escapeHTML;
 const participantMode = location.pathname === "/join";
+const sound = window.QuizzesSound;
 $("#openAppNote").hidden = window.self === window.top;
 let account = null,
   setup = false,
@@ -128,6 +129,7 @@ $("#authButton").onclick = async () => {
   try {
     await api("/api/logout", { method: "POST" });
     manualClose = true;
+    sound.stop();
     socket?.close();
     forgetConnection();
     game = null;
@@ -349,6 +351,19 @@ function editQuiz(q) {
 }
 function openEditor() {
   dirty = false;
+  const report = draft._importReport;
+  $("#importReview").hidden = !report;
+  $("#importReviewed").disabled = !report;
+  $("#importReviewed").required = !!report;
+  $("#importReviewed").checked = false;
+  if (report) {
+    $("#importSummary").textContent =
+      `${report.recognized} questions extracted · ${report.needsAnswers} need a correct answer. Review all questions before saving.`;
+    $("#importWarnings").innerHTML = report.warnings
+      .map((w) => `<li>${e(w)}</li>`)
+      .join("");
+    $("#importSource").textContent = report.sourceText;
+  }
   $("#editorHeading").textContent = draft.id
     ? "Edit your quiz"
     : "Create your quiz";
@@ -367,11 +382,11 @@ function mediaHTML(url, type) {
 function renderEditor() {
   $("#musicPreview").innerHTML = draft.music
     ? `<audio controls preload="metadata" src="${e(draft.music)}"></audio>`
-    : '<span class="muted">No music added</span>';
+    : '<span class="muted">♬ Original Quizzes soundtrack · plays by default</span>';
   $("#roundEditor").innerHTML = draft.rounds
     .map(
       (r, ri) =>
-        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round title<input class="round-title" value="${e(r.title)}" maxlength="100" required></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><span class="pill">QUESTION ${qi + 1}</span><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option></select></label><label>Time · seconds<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct"><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label><label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) + 1}"></label>`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
+        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round title<input class="round-title" value="${e(r.title)}" maxlength="100" required></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><span class="pill">QUESTION ${qi + 1}</span><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option></select></label><label>Time · seconds<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct" required><option value="" ${q.correct < 0 ? "selected" : ""}>Select correct answer</option><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label><label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) >= 0 ? Number(q.correct) + 1 : ""}"></label>`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
     )
     .join("");
 }
@@ -388,7 +403,10 @@ function collectDraft() {
         const f = input.dataset.field;
         if (["options", "accepted"].includes(f))
           q[f] = input.value.split("\n").map((x) => x.trim());
-        else if (f === "correctChoice") q.correct = Number(input.value) - 1;
+        else if (f === "correctChoice")
+          q.correct = input.value === "" ? -1 : Number(input.value) - 1;
+        else if (f === "correct")
+          q.correct = input.value === "" ? -1 : Number(input.value);
         else
           q[f] = ["seconds", "points", "correct"].includes(f)
             ? Number(input.value)
@@ -509,12 +527,12 @@ $("#musicFile").onchange = async (event) => {
   try {
     const m = await upload(file);
     if (!m.mime.startsWith("audio/"))
-      throw Error("Lobby music must be an audio file.");
+      throw Error("Background music must be an audio file.");
     collectDraft();
     draft.music = m.url;
     dirty = true;
     renderEditor();
-    showToast("Lobby music attached");
+    showToast("Custom soundtrack attached");
   } catch (err) {
     showToast(err.message);
   } finally {
@@ -609,6 +627,7 @@ function openSocket(initial) {
   socket.onerror = () =>
     connectionText("Connection unavailable. Check your internet connection.");
   socket.onclose = (event) => {
+    sound.stop();
     if (manualClose) return;
     connectionText(
       event.code === 4000
@@ -636,6 +655,7 @@ function openSocket(initial) {
   };
 }
 function launchQuiz(id) {
+  sound.enable();
   if (game && game.status !== "ended") {
     showToast("Finish your current game before launching another.");
     $("#gameModal").classList.add("open");
@@ -699,10 +719,12 @@ function handleMessage(m) {
       $("#gameTitle").textContent = game.title;
       $("#hostCode").textContent = game.code;
       $("#previewPlayer").href = joinURL();
-      $("#lobbyMusic").innerHTML = m.music
-        ? `<label class="music-control">Lobby music <audio controls loop src="${e(m.music)}"></audio></label>`
-        : "";
     }
+    const musicContainer = $(participantMode ? "#playerMusic" : "#lobbyMusic");
+    musicContainer.innerHTML = m.music
+      ? `<label class="music-control">Custom soundtrack <audio controls loop preload="metadata" src="${e(m.music)}"></audio></label>`
+      : "";
+    sound.setTrack($("audio", musicContainer));
     if (game.status === "question") renderQuestion();
     else if (game.status === "results") renderResults(m.result);
     else if (game.status === "ended") renderEnded(m.leaderboard);
@@ -721,7 +743,6 @@ function handleMessage(m) {
     game = m.game;
     liveQuestion = m.question;
     locked = false;
-    $("#lobbyMusic audio")?.pause();
     renderQuestion();
     renderPlayers();
     return;
@@ -756,7 +777,14 @@ function handleMessage(m) {
 function joinURL() {
   return `${location.origin}/join?code=${encodeURIComponent(game.code)}`;
 }
+function stopQuestionAudio() {
+  $$("#hostMedia audio, #playerMedia audio").forEach((audio) => audio.pause());
+  sound.resetDuck();
+}
 function renderLobby() {
+  stopQuestionAudio();
+  sound.setPhase("lobby");
+  setGameStyle("lobby");
   if (participantMode) {
     $("#playerRound").textContent = "WELCOME TO " + game.code;
     $("#playerTitle").textContent = "You’re in!";
@@ -782,6 +810,9 @@ function renderLobby() {
   }
 }
 function renderQuestion() {
+  stopQuestionAudio();
+  sound.setPhase("question");
+  setGameStyle("question");
   const q = liveQuestion;
   if (!q) return;
   const prefix = participantMode ? "player" : "host";
@@ -802,7 +833,12 @@ function renderQuestion() {
       button.className = participantMode
         ? "p-answer"
         : `answer ${["purple", "yellow", "green", "blue"][i % 4]}-answer`;
-      button.textContent = String.fromCharCode(65 + i) + "  " + option;
+      button.dataset.answer = i;
+      button.setAttribute(
+        "aria-label",
+        String.fromCharCode(65 + i) + " " + option,
+      );
+      button.innerHTML = `<span class="answer-shape" aria-hidden="true">${["▲", "◆", "●", "■", "⬟", "★"][i]}</span><span class="answer-copy">${e(option)}</span>`;
       if (participantMode) button.onclick = () => submitAnswer(i, button);
       options.append(button);
     });
@@ -847,9 +883,21 @@ $("#textAnswerForm").onsubmit = (event) => {
   submitAnswer($("#textAnswer").value);
 };
 function renderResults(result) {
+  stopQuestionAudio();
+  sound.setPhase("results");
+  setGameStyle("results");
   const prefix = participantMode ? "player" : "host";
   $(`#${prefix}Hint`).textContent =
     "Correct answer: " + (result?.correct || "—");
+  if (liveQuestion?.type !== "text") {
+    $$(`#${prefix}Options [data-answer]`).forEach((tile) => {
+      tile.classList.toggle(
+        "is-correct",
+        liveQuestion?.options?.[Number(tile.dataset.answer)] ===
+          result?.correct,
+      );
+    });
+  }
   $(`#${prefix}Results`).innerHTML =
     '<h3 class="results-heading">Leaderboard</h3>' +
     leaderboardHTML(result?.leaderboard || []);
@@ -874,6 +922,9 @@ function renderResults(result) {
   }
 }
 function renderEnded(rows) {
+  stopQuestionAudio();
+  sound.setPhase("ended");
+  setGameStyle("ended");
   connectionText("Session complete · thank you for playing.");
   const prefix = participantMode ? "player" : "host";
   $(`#${prefix}Round`).textContent = "THAT’S A WRAP";
@@ -883,7 +934,8 @@ function renderEnded(rows) {
     "Thank you for playing. Here are the final results.";
   $(`#${prefix}Options`).innerHTML = "";
   $(`#${prefix}Media`).innerHTML = "";
-  $(`#${prefix}Results`).innerHTML = leaderboardHTML(rows || []);
+  $(`#${prefix}Results`).innerHTML =
+    podiumHTML(rows || []) + leaderboardHTML(rows || []);
   if (participantMode) {
     $("#textAnswerForm").hidden = true;
     $("#answerStatus").textContent =
@@ -891,7 +943,6 @@ function renderEnded(rows) {
   } else {
     $("#nextQuestion").disabled = true;
     $("#nextQuestion").textContent = "Results saved ✓";
-    $("#lobbyMusic audio")?.pause();
     $("#returnToGame").hidden = true;
   }
 }
@@ -913,6 +964,15 @@ function renderPlayers() {
 }
 setInterval(() => {
   if (!game) return;
+  const remaining =
+    game.status === "question"
+      ? Math.max(0, Math.ceil((game.deadline - Date.now() - offset) / 1000))
+      : 0;
+  sound.remaining(remaining);
+  $(participantMode ? "#playerTimer" : "#hostTimer").classList.toggle(
+    "timer-urgent",
+    game.status === "question" && remaining <= 5,
+  );
   const text =
     game.status === "question"
       ? Math.max(0, Math.ceil((game.deadline - Date.now() - offset) / 1000)) +
@@ -934,6 +994,7 @@ setInterval(() => {
 }, 150);
 $("#nextQuestion").onclick = () => {
   if (!game) return;
+  sound.enable();
   if (game.status === "question") {
     if (confirm("End the timer now and reveal the correct answer?"))
       send("reveal_answers");
@@ -960,6 +1021,7 @@ $("#copyJoin").onclick = async () => {
 };
 $("#joinPanel").onsubmit = (event) => {
   event.preventDefault();
+  sound.enable();
   $("#joinStatus").textContent = "Connecting…";
   $("#joinGameBtn").disabled = true;
   forgetConnection();
@@ -979,6 +1041,7 @@ $("#leavePlayer").onclick = () => {
   )
     return;
   manualClose = true;
+  sound.stop();
   clearTimeout(reconnectTimer);
   forgetConnection();
   socket?.close();
@@ -1132,5 +1195,89 @@ $("#backupForm").onsubmit = async (event) => {
     $("#backupStatus").textContent = "Backup failed: " + err.message;
   } finally {
     button.disabled = false;
+  }
+};
+
+function setGameStyle(phase) {
+  $("#gameModal").dataset.phase = phase;
+  $("#participantApp").dataset.phase = phase;
+}
+function podiumHTML(rows) {
+  if (!rows.length) return "";
+  const top = rows.slice(0, 3);
+  return `<div class="podium" aria-label="Top three players">${[
+    top[1],
+    top[0],
+    top[2],
+  ]
+    .filter(Boolean)
+    .map(
+      (p) =>
+        `<div class="podium-place place-${p.rank}"><span aria-hidden="true">${p.rank === 1 ? "♛" : "★"}</span><b>${e(p.name)}</b><small>${Number(p.score).toLocaleString()} pts</small><strong>${p.rank}</strong></div>`,
+    )
+    .join(
+      "",
+    )}</div><div class="celebration" aria-hidden="true">✦ · ✧ · ★ · ✦ · ✧</div>`;
+}
+document.addEventListener("click", (event) => {
+  if (!event.target.closest("[data-import]")) return;
+  if (!requireHost()) return;
+  $("#importStatus").textContent = "";
+  $("#importDialog").showModal();
+});
+$("#closeImport").onclick = () => $("#importDialog").close();
+$("#documentFile").onchange = () => {
+  if ($("#documentFile").files.length) $("#documentText").value = "";
+};
+$("#documentText").oninput = () => {
+  $("#documentFile").value = "";
+};
+$("#importForm").onsubmit = async (event) => {
+  event.preventDefault();
+  const file = $("#documentFile").files[0];
+  const text = $("#documentText").value;
+  if (!file && !text.trim()) {
+    $("#importStatus").textContent =
+      "Choose a document or paste some questions first.";
+    return;
+  }
+  if (file && file.size > 5 * 1024 * 1024) {
+    $("#importStatus").textContent = "Maximum file size is 5 MB.";
+    return;
+  }
+  $("#importSubmit").disabled = true;
+  $("#importStatus").textContent = "Reading your document…";
+  try {
+    const result = await api("/api/quiz-import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": encodeURIComponent(file?.name || "Imported quiz.txt"),
+      },
+      body: file || new Blob([text], { type: "text/plain" }),
+    });
+    if (
+      dirty &&
+      currentView === "editor" &&
+      !confirm("Replace your unsaved draft with the imported quiz?")
+    )
+      return;
+    draft = result.quiz;
+    draft._importReport = {
+      recognized: result.recognized,
+      needsAnswers: result.needsAnswers,
+      warnings: result.warnings,
+      sourceText: result.sourceText,
+    };
+    $("#importDialog").close();
+    openEditor();
+    dirty = true;
+    showToast(
+      `${result.recognized} questions extracted. Review the draft before saving.`,
+    );
+  } catch (err) {
+    $("#importStatus").textContent = err.message;
+  } finally {
+    $("#importSubmit").disabled = false;
   }
 };

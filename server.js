@@ -4,13 +4,18 @@ const path = require("path");
 const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 const {
+  loadStartupModule,
+  checkStartup,
+  logStartupFailure,
+} = require("./startup-diagnostics");
+const {
   db,
   ready: databaseReady,
   passwordHash,
   passwordMatches,
   hash,
-} = require("./storage");
-const mediaStore = require("./media-store");
+} = loadStartupModule("./storage", "DATABASE_CONFIG");
+const mediaStore = loadStartupModule("./media-store", "MEDIA_CONFIG");
 const { writeBackup } = require("./backup-service");
 const PORT = Number(process.env.PORT || 4173);
 const games = new Map();
@@ -1026,20 +1031,35 @@ const heartbeat = setInterval(async () => {
   }
   for (const [k, v] of limits) if (v.until < Date.now()) limits.delete(k);
 }, 30000);
-Promise.all([databaseReady, mediaStore.ready])
-  .then(() =>
+console.log(
+  "Quizzes startup diagnostics v1 (credential values are never logged)",
+);
+checkStartup([
+  { stage: "DATABASE_SCHEMA", promise: databaseReady },
+  { stage: "MEDIA_BUCKET_VALIDATE", promise: mediaStore.ready },
+])
+  .then((healthy) => {
+    if (!healthy) {
+      console.error(
+        "Startup stopped. Resolve the failed check(s) above and redeploy; no credentials were logged.",
+      );
+      process.exit(1);
+    }
     server.listen(PORT, "0.0.0.0", () =>
       console.log(
         `Quizzes listening on 0.0.0.0:${PORT} · ${db.kind} · ${mediaStore.remote ? "persistent cloud media" : "local media"}${setupEnabled ? " · private-preview first-run setup enabled" : ""}`,
       ),
-    ),
-  )
-  .catch(() => {
-    console.error(
-      "Startup failed. Verify database, TLS certificate and media environment settings; secrets are not logged.",
     );
+  })
+  .catch((error) => {
+    logStartupFailure("SERVER_STARTUP", error);
     process.exit(1);
   });
+server.on("error", (error) => {
+  logStartupFailure("SERVER_LISTEN", error);
+  process.exit(1);
+});
+
 let stopping = false;
 async function shutdown() {
   if (stopping) return;

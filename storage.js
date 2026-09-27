@@ -3,6 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { promisify } = require("node:util");
 const scrypt = promisify(crypto.scrypt);
+const { startupError } = require("./startup-diagnostics");
 const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
 const cloud = !!process.env.DATABASE_URL;
 if (
@@ -33,7 +34,51 @@ const TABLES = [
 let db;
 if (cloud) {
   const { Pool } = require("pg");
-  const address = new URL(process.env.DATABASE_URL);
+  let address;
+  try {
+    const value = process.env.DATABASE_URL;
+    if (value !== value.trim() || /[\r\n]/.test(value)) throw Error();
+    address = new URL(value);
+    if (
+      !["postgres:", "postgresql:"].includes(address.protocol) ||
+      !address.hostname ||
+      address.hash
+    )
+      throw Error();
+    if (
+      address.hostname.endsWith(".supabase.com") ||
+      address.hostname.endsWith(".supabase.co")
+    ) {
+      if (!address.username || !address.password)
+        throw startupError(
+          "CONFIG_DATABASE_PASSWORD_MISSING",
+          "DATABASE_CONFIG",
+        );
+    }
+    if (
+      decodeURIComponent(address.password)
+        .toUpperCase()
+        .includes("[YOUR-PASSWORD]")
+    )
+      throw startupError("CONFIG_DATABASE_PLACEHOLDER", "DATABASE_CONFIG");
+  } catch (error) {
+    if (
+      [
+        "CONFIG_DATABASE_PLACEHOLDER",
+        "CONFIG_DATABASE_PASSWORD_MISSING",
+      ].includes(error.code)
+    )
+      throw error;
+    throw startupError("CONFIG_DATABASE_URL", "DATABASE_CONFIG");
+  }
+  if (process.env.DATABASE_CA_CERT) {
+    const pem = process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n").trim();
+    if (
+      !pem.startsWith("-----BEGIN CERTIFICATE-----") ||
+      !pem.endsWith("-----END CERTIFICATE-----")
+    )
+      throw startupError("CONFIG_DATABASE_CA", "DATABASE_CONFIG");
+  }
   // Do not allow a URL parameter to silently disable certificate verification.
   for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"])
     address.searchParams.delete(key);
@@ -164,60 +209,70 @@ async function passwordMatches(password, stored) {
 }
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const ready = (async () => {
-  if (cloud) {
-    await db.exec("CREATE SCHEMA IF NOT EXISTS quizzes_private");
-    await db.exec("REVOKE ALL ON SCHEMA quizzes_private FROM PUBLIC");
-  }
-  await db.exec(schema);
-  // Use a marker so deleting the last quiz does not bring the sample back.
-  if (
-    !(await db.prepare("SELECT value FROM metadata WHERE key=?").get("seeded"))
-  ) {
-    await db.withTransaction(async (tx) => {
-      if (
-        !Number((await tx.prepare("SELECT COUNT(*) AS n FROM quizzes").get()).n)
-      ) {
-        const quiz = require("./seed-quiz.json");
+  let stage = "DATABASE_SCHEMA";
+  try {
+    if (cloud) {
+      await db.exec("CREATE SCHEMA IF NOT EXISTS quizzes_private");
+      await db.exec("REVOKE ALL ON SCHEMA quizzes_private FROM PUBLIC");
+    }
+    await db.exec(schema);
+    stage = "DATABASE_SEED";
+    // Use a marker so deleting the last quiz does not bring the sample back.
+    if (
+      !(await db
+        .prepare("SELECT value FROM metadata WHERE key=?")
+        .get("seeded"))
+    ) {
+      await db.withTransaction(async (tx) => {
+        if (
+          !Number(
+            (await tx.prepare("SELECT COUNT(*) AS n FROM quizzes").get()).n,
+          )
+        ) {
+          const quiz = require("./seed-quiz.json");
+          await tx
+            .prepare(
+              "INSERT INTO quizzes VALUES (?,?,?) ON CONFLICT (id) DO NOTHING",
+            )
+            .run(quiz.id, JSON.stringify(quiz), Date.now());
+        }
         await tx
           .prepare(
-            "INSERT INTO quizzes VALUES (?,?,?) ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO metadata VALUES (?,?) ON CONFLICT (key) DO NOTHING",
           )
-          .run(quiz.id, JSON.stringify(quiz), Date.now());
-      }
-      await tx
-        .prepare(
-          "INSERT INTO metadata VALUES (?,?) ON CONFLICT (key) DO NOTHING",
-        )
-        .run("seeded", "1");
-    });
-  }
-  const email = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
-  const password = process.env.INITIAL_ADMIN_PASSWORD;
-  if (
-    (email || password) &&
-    !(await db.prepare("SELECT id FROM admins LIMIT 1").get())
-  ) {
-    const organization = process.env.ORGANIZATION_NAME?.trim();
+          .run("seeded", "1");
+      });
+    }
+    stage = "HOST_SETUP";
+    const email = process.env.INITIAL_ADMIN_EMAIL?.trim().toLowerCase();
+    const password = process.env.INITIAL_ADMIN_PASSWORD;
     if (
-      !email ||
-      !/^\S+@\S+\.\S+$/.test(email) ||
-      email.length > 254 ||
-      !password ||
-      password.length < 12 ||
-      password.length > 128 ||
-      !organization ||
-      organization.length > 120
-    )
-      throw new Error(
-        "Initial host configuration is incomplete. Set a valid email, organization and 12–128 character password in the hosting dashboard.",
+      (email || password) &&
+      !(await db.prepare("SELECT id FROM admins LIMIT 1").get())
+    ) {
+      const organization = process.env.ORGANIZATION_NAME?.trim();
+      if (
+        !email ||
+        !/^\S+@\S+\.\S+$/.test(email) ||
+        email.length > 254 ||
+        !password ||
+        password.length < 12 ||
+        password.length > 128 ||
+        !organization ||
+        organization.length > 120
+      )
+        throw startupError("HOST_SETUP_CONFIG", "HOST_SETUP");
+      const encoded = await passwordHash(password);
+      await db
+        .prepare("INSERT INTO admins VALUES (?,?,?,?)")
+        .run(crypto.randomUUID(), email, encoded, organization);
+      console.log(
+        "Initial host account created. Remove INITIAL_ADMIN_PASSWORD from the hosting environment after signing in.",
       );
-    const encoded = await passwordHash(password);
-    await db
-      .prepare("INSERT INTO admins VALUES (?,?,?,?)")
-      .run(crypto.randomUUID(), email, encoded, organization);
-    console.log(
-      "Initial host account created. Remove INITIAL_ADMIN_PASSWORD from the hosting environment after signing in.",
-    );
+    }
+  } catch (error) {
+    if (!error.startupStage) error.startupStage = stage;
+    throw error;
   }
 })();
 async function exportDatabase() {

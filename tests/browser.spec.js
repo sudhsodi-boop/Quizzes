@@ -239,5 +239,163 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toBeVisible();
   expect(errors).toEqual([]);
+
+  // New document import, explicit review, and default sound on both screens.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator('.nav-item[data-view="dashboard"]').click();
+  const beforeImport = await page.evaluate(
+    async () => (await (await fetch("/api/quizzes")).json()).length,
+  );
+  for (const extension of ["docx", "pdf"]) {
+    await page
+      .locator("[data-import]")
+      .filter({ visible: true })
+      .first()
+      .click();
+    await page
+      .locator("#documentFile")
+      .setInputFiles(
+        require("path").join(
+          __dirname,
+          "fixtures",
+          "import-example." + extension,
+        ),
+      );
+    await page.locator("#importSubmit").click();
+    await expect(page.locator("#importReview")).toBeVisible();
+    await expect(page.locator(".question-card")).toHaveCount(4);
+    await expect(page.locator("#importSummary")).toContainText(
+      "0 need a correct answer",
+    );
+    await expect(
+      page.locator('[data-field="correctChoice"]').first(),
+    ).toHaveValue("2");
+    // Import has not persisted a quiz or exposed source text to the library.
+    expect(
+      await page.evaluate(
+        async () => (await (await fetch("/api/quizzes")).json()).length,
+      ),
+    ).toBe(beforeImport);
+    await page.getByRole("button", { name: "Back to library" }).click();
+  }
+  await page.locator("[data-import]").filter({ visible: true }).first().click();
+  await page
+    .locator("#documentText")
+    .fill(
+      "Title: Community Game Night\n1. Which planet is red?\nA) Venus\nB) Mars\nC) Saturn\nD) Neptune\n2. Choose True or False.\nAnswer: False",
+    );
+  await page.locator("#importSubmit").click();
+  await expect(page.locator("#importSummary")).toContainText(
+    "1 need a correct answer",
+  );
+  await expect(
+    page.locator('[data-field="correctChoice"]').first(),
+  ).toHaveValue("");
+  await page.locator('[data-field="correctChoice"]').first().fill("2");
+  await page.getByRole("button", { name: "Save quiz", exact: true }).click();
+  await expect(page.locator("#editor")).toBeVisible(); // Explicit review acknowledgement required.
+  await page.locator("#importReviewed").check();
+  await page.getByRole("button", { name: "Save quiz", exact: true }).click();
+  const importedCard = page
+    .locator(".library-card")
+    .filter({ hasText: "Community Game Night" });
+  await expect(importedCard).toBeVisible();
+  const savedImport = await page.evaluate(async () =>
+    (await (await fetch("/api/quizzes")).json()).find(
+      (q) => q.title === "Community Game Night",
+    ),
+  );
+  expect(savedImport._importReport).toBeUndefined();
+  expect(savedImport.music).toBe("");
+  expect(savedImport.rounds[0].questions[0].correct).toBe(1);
+  // Count generated notes, not just UI labels, to verify the default sequencer runs.
+  const countNotes = () => {
+    window.__quizzesNotes = 0;
+    const original = OscillatorNode.prototype.start;
+    OscillatorNode.prototype.start = function (...args) {
+      window.__quizzesNotes++;
+      return original.apply(this, args);
+    };
+  };
+  await page.evaluate(countNotes);
+  await importedCard.getByRole("button", { name: "Host game" }).click();
+  await expect
+    .poll(() => page.evaluate(() => QuizzesSound.status().state))
+    .toBe("running");
+  await expect
+    .poll(() => page.evaluate(() => window.__quizzesNotes))
+    .toBeGreaterThan(0);
+  expect(await page.evaluate(() => QuizzesSound.status().custom)).toBe(false);
+  const newCode = await page.locator("#hostCode").textContent();
+  await player.goto("/join?code=" + newCode);
+  await player.evaluate(countNotes);
+  await player.getByLabel("Your nickname").fill("Soundtrack player");
+  await player.getByRole("button", { name: "Join game" }).click();
+  await expect(player.locator("#playerTitle")).toHaveText("You’re in!");
+  await expect
+    .poll(() => player.evaluate(() => QuizzesSound.status().state))
+    .toBe("running");
+  await expect
+    .poll(() => player.evaluate(() => window.__quizzesNotes))
+    .toBeGreaterThan(0);
+  const denied = await player.request.post("/api/quiz-import", {
+    headers: { Origin: "http://localhost:4182", "X-File-Name": "private.txt" },
+    data: "1. Private question\nAnswer: yes",
+  });
+  expect(denied.status()).toBe(401);
+  await player.locator("#playerSound .sound-toggle").click();
+  expect(await player.evaluate(() => QuizzesSound.status().muted)).toBe(true);
+  expect(await page.evaluate(() => QuizzesSound.status().muted)).toBe(false);
+  await player.locator("#playerSound .sound-toggle").click();
+  await page.screenshot({
+    path: "test-artifacts/classic-host-lobby.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Start question" }).click();
+  await expect(player.locator("#playerOptions button")).toHaveCount(4);
+  expect(await player.evaluate(() => QuizzesSound.status().phase)).toBe(
+    "question",
+  );
+  await expect(player.locator(".answer-shape").first()).toBeVisible();
+  await page.screenshot({
+    path: "test-artifacts/classic-host-question.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  await player.screenshot({
+    path: "test-artifacts/classic-player-question.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  await player.getByRole("button", { name: "B Mars", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal answers" }).click();
+  await expect(player.locator("#playerHint")).toContainText(
+    "Correct answer: Mars",
+  );
+  expect(await player.evaluate(() => QuizzesSound.status().phase)).toBe(
+    "results",
+  );
+  await page.getByRole("button", { name: "Next question" }).click();
+  await player.getByRole("button", { name: "B False", exact: true }).click();
+  await page.getByRole("button", { name: "Reveal answers" }).click();
+  await page.getByRole("button", { name: "Finish & save results" }).click();
+  await expect(player.locator(".podium-place")).toHaveCount(1);
+  await expect
+    .poll(() => player.evaluate(() => QuizzesSound.status().phase), {
+      timeout: 7000,
+    })
+    .toBe("idle");
+  await player.screenshot({
+    path: "test-artifacts/classic-player-podium.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  expect(
+    await player.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  expect(errors).toEqual([]);
   await context.close();
 });

@@ -243,7 +243,7 @@ test(
           assert.equal(uploaded.res.status, 201);
           media = uploaded.value.url;
           assert.equal(
-            (await fetch(origin + media)).headers.get("content-type"),
+            (await fetch(origin + media, {headers:{Cookie:cookie}})).headers.get("content-type"),
             "image/png",
           );
           const quiz = {
@@ -376,6 +376,8 @@ test(
             "results",
           );
           host.send("next_question");
+          assert.match((await player.wait("round_intro")).game.upcomingRound,/Round 2/);
+          host.send("next_question");
           const q = await player.wait("question_started");
           assert.equal(q.question.type, "text");
           assert.ok(!("accepted" in q.question));
@@ -463,7 +465,7 @@ test(
               (r) => r.id === reportId,
             ),
           );
-          assert.equal((await fetch(origin + media)).status, 200);
+          assert.equal((await fetch(origin + media, {headers:{Cookie:cookie}})).status, 200);
         },
       );
       await t.test(

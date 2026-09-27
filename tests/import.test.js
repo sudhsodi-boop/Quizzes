@@ -22,13 +22,8 @@ test("structured importer recognizes rounds, choice, true/false and typed answer
   assert.equal(qs[1].correct, 0);
   assert.deepEqual(qs[2].accepted, ["together"]);
 });
-test("unknown, conflicting and multiple correct answers are never guessed", () => {
-  for (const key of [
-    "",
-    "Answer: Z",
-    "Answer: A and B",
-    "Answer: A\nAnswer: B",
-  ]) {
+test("unknown, conflicting and ambiguous answer keys are left for review", () => {
+  for (const key of ["", "Answer: Z", "Answer: A\nAnswer: B"]) {
     const r = parseQuizText("1. Pick one\nA) Red\nB) Blue\n" + key);
     assert.equal(r.quiz.rounds[0].questions[0].correct, -1);
     assert.equal(r.needsAnswers, 1);
@@ -116,4 +111,42 @@ test("scans, damaged documents, binary text and oversized uploads fail safely", 
     importDocument(Buffer.alloc(5 * 1024 * 1024 + 1), "txt", "Large"),
     (e) => e.status === 413,
   );
+});
+test("bold, color, highlighting, inherited styles, checkmarks and multiple answer keys are recognized with review warnings", async () => {
+  const doc = await importDocument(
+    fs.readFileSync(path.join(__dirname, "fixtures/formatted-answers.docx")),
+    "docx",
+    "Styled",
+  );
+  const qs = doc.quiz.rounds[0].questions;
+  assert.deepEqual(
+    qs.map((q) => q.correct),
+    [1, 1, 1, 1, -1, -1, 1, 1],
+  );
+  assert.equal(qs[4].type, "multi");
+  assert.deepEqual(qs[4].correctAnswers, [0, 2]);
+  assert.equal(doc.needsAnswers, 1);
+  assert.ok(doc.warnings.some((w) => /formatting/.test(w)));
+  const pdf = await importDocument(
+    fs.readFileSync(path.join(__dirname, "fixtures/formatted-answers.pdf")),
+    "pdf",
+    "Styled",
+  );
+  assert.deepEqual(
+    pdf.quiz.rounds[0].questions.map((q) => q.correct),
+    [1, 1, 1],
+  );
+  const explicit = parseQuizText(
+    "1. Choose primes\nA) 2\nB) 4\nC) 3\nAnswers: A and C",
+  );
+  assert.equal(explicit.quiz.rounds[0].questions[0].type, "multi");
+  assert.deepEqual(explicit.quiz.rounds[0].questions[0].correctAnswers, [0, 2]);
+  const plain = await importDocument(
+    fs.readFileSync(path.join(__dirname, "fixtures/formatted-answers.docx")),
+    "docx",
+    "Styled",
+    "marks",
+  );
+  assert.equal(plain.quiz.rounds[0].questions[0].correct, -1);
+  assert.equal(plain.quiz.rounds[0].questions[3].correct, 1);
 });

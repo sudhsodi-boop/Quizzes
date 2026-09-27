@@ -17,7 +17,9 @@ const messages = {
   CONFIG_DATABASE_URL:
     "DATABASE_URL is not a valid PostgreSQL URI. Paste the plain Session pooler URI, without quotes, Markdown or http:// links.",
   CONFIG_DATABASE_PASSWORD_MISSING:
-    "DATABASE_URL is missing its Supabase database username or password. Copy the Session pooler URI and replace its password placeholder privately in Render.",
+    "The Supabase database username/password is missing, or DATABASE_PASSWORD was added but left empty. Set the current database password privately in Render and use the Session pooler username.",
+  CONFIG_DATABASE_PROJECT_MISMATCH:
+    "The database connection identifies a different Supabase project from SUPABASE_URL, or its pooler username is missing the project suffix. Copy the Session pooler host and username from the SAME project used for media.",
   CONFIG_DATABASE_PLACEHOLDER:
     "DATABASE_URL still contains the YOUR-PASSWORD placeholder. Replace it privately in Render with the URL-encoded database password.",
   CONFIG_DATABASE_CA:

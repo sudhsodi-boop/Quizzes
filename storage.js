@@ -34,77 +34,14 @@ const TABLES = [
 let db;
 if (cloud) {
   const { Pool } = require("pg");
-  let address;
-  try {
-    const value = process.env.DATABASE_URL;
-    if (value !== value.trim() || /[\r\n]/.test(value)) throw Error();
-    address = new URL(value);
-    if (
-      !["postgres:", "postgresql:"].includes(address.protocol) ||
-      !address.hostname ||
-      address.hash
-    )
-      throw Error();
-    if (
-      address.hostname.endsWith(".supabase.com") ||
-      address.hostname.endsWith(".supabase.co")
-    ) {
-      if (!address.username || !address.password)
-        throw startupError(
-          "CONFIG_DATABASE_PASSWORD_MISSING",
-          "DATABASE_CONFIG",
-        );
-    }
-    if (
-      decodeURIComponent(address.password)
-        .toUpperCase()
-        .includes("[YOUR-PASSWORD]")
-    )
-      throw startupError("CONFIG_DATABASE_PLACEHOLDER", "DATABASE_CONFIG");
-  } catch (error) {
-    if (
-      [
-        "CONFIG_DATABASE_PLACEHOLDER",
-        "CONFIG_DATABASE_PASSWORD_MISSING",
-      ].includes(error.code)
-    )
-      throw error;
-    throw startupError("CONFIG_DATABASE_URL", "DATABASE_CONFIG");
-  }
-  if (process.env.DATABASE_CA_CERT) {
-    const pem = process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n").trim();
-    if (
-      !pem.startsWith("-----BEGIN CERTIFICATE-----") ||
-      !pem.endsWith("-----END CERTIFICATE-----")
-    )
-      throw startupError("CONFIG_DATABASE_CA", "DATABASE_CONFIG");
-  }
-  // Do not allow a URL parameter to silently disable certificate verification.
-  for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"])
-    address.searchParams.delete(key);
-  const ssl =
-    process.env.NODE_ENV === "test" &&
-    process.env.DATABASE_TEST_NO_TLS === "true"
-      ? false
-      : {
-          rejectUnauthorized: true,
-          ...(process.env.DATABASE_CA_CERT
-            ? {
-                ca: [
-                  ...require("node:tls").rootCertificates,
-                  process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n"),
-                ],
-              }
-            : {}),
-        };
-  const pool = new Pool({
-    connectionString: address.toString(),
-    ssl,
-    max: 5,
-    connectionTimeoutMillis: 15000,
-    idleTimeoutMillis: 30000,
-    keepAlive: true,
-  });
+  const { databaseConfig } = require("./database-config");
+  const configuration = databaseConfig(process.env);
+  console.log(
+    configuration.passwordSource === "separate"
+      ? "Database credential mode: separate DATABASE_PASSWORD; URL password is ignored."
+      : "Database credential mode: DATABASE_URL password.",
+  );
+  const pool = new Pool(configuration.options);
   pool.on("error", () =>
     console.error("A database connection was interrupted."),
   );

@@ -1,6 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { db, ready, TABLES } = require("../storage");
+const { db, ready, TABLES, migrateOwnership } = require("../storage");
 const media = require("../media-store");
 const columns = {
   admins: ["id", "email", "password", "organization"],
@@ -9,6 +9,17 @@ const columns = {
   reports: ["id", "document", "ended"],
   recovery_codes: ["digest", "admin_id", "created"],
   metadata: ["key", "value"],
+  ownership: ["kind", "item_id", "owner_id"],
+  invitations: ["digest", "owner_id", "expires", "used"],
+  publications: ["id", "owner_id", "document", "created", "closes"],
+  attempts: [
+    "id",
+    "publication_id",
+    "browser_hash",
+    "name",
+    "document",
+    "updated",
+  ],
 };
 (async () => {
   if (!process.argv[2])
@@ -19,10 +30,18 @@ const columns = {
   );
   if (
     snapshot.format !== "quizzes-backup" ||
-    snapshot.version !== 1 ||
+    ![1, 2].includes(snapshot.version) ||
     !snapshot.tables
   )
     throw Error("Unsupported backup format.");
+  if (snapshot.version === 1)
+    for (const table of [
+      "ownership",
+      "invitations",
+      "publications",
+      "attempts",
+    ])
+      snapshot.tables[table] = [];
   for (const table of TABLES) {
     if (!Array.isArray(snapshot.tables[table]))
       throw Error("Missing backup table.");
@@ -59,6 +78,7 @@ const columns = {
           .run(...names.map((k) => row[k]));
     }
   });
+  await migrateOwnership();
   console.log(
     "Saved accounts, quizzes, reports and media restored. Sign in again; live rooms and old login sessions are not restored.",
   );

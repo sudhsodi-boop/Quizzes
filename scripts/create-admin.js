@@ -84,6 +84,7 @@ async function hidden(prompt) {
   await db
     .prepare("INSERT INTO admins VALUES (?,?,?,?)")
     .run(crypto.randomUUID(), email, encoded, organization);
+  await require("../storage").migrateOwnership();
   console.log("Host account created. Sign in through the app.");
 })()
   .catch((err) => {

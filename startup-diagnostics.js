@@ -14,6 +14,8 @@ const stages = new Set([
   "SERVER_LISTEN",
 ]);
 const messages = {
+  WORKSPACE_OWNER_REQUIRED:
+    "Multiple existing hosts share legacy content. Set WORKSPACE_OWNER_EMAIL to the host who should own that existing content, then redeploy. No legacy content has been assigned or deleted.",
   CONFIG_DATABASE_URL:
     "DATABASE_URL is not a valid PostgreSQL URI. Paste the plain Session pooler URI, without quotes, Markdown or http:// links.",
   CONFIG_DATABASE_PASSWORD_MISSING:

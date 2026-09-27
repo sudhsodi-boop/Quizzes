@@ -1,8 +1,8 @@
 const { ZipArchive } = require("archiver");
 const { exportDatabase } = require("./storage");
 const mediaStore = require("./media-store");
-async function writeBackup(destination) {
-  const snapshot = await exportDatabase();
+async function writeBackup(destination, ownerId) {
+  const snapshot = await exportDatabase(ownerId);
   const archive = new ZipArchive({ zlib: { level: 6 } });
   const completed = new Promise((resolve, reject) => {
     destination.on("finish", resolve);

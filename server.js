@@ -14,10 +14,28 @@ const {
   passwordHash,
   passwordMatches,
   hash,
+  owns,
+  migrateOwnership,
 } = loadStartupModule("./storage", "DATABASE_CONFIG");
 const mediaStore = loadStartupModule("./media-store", "MEDIA_CONFIG");
 const { writeBackup } = require("./backup-service");
 const { importDocument } = require("./quiz-import");
+const rules = require("./quiz-rules");
+const features = require("./workspace-features")({
+  db,
+  user,
+  requireUser,
+  owns,
+  hash,
+  passwordHash,
+  cookie,
+  json,
+  data,
+  fail,
+  bounded,
+  rate,
+  peer,
+});
 const PORT = Number(process.env.PORT || 4173);
 const games = new Map();
 const limits = new Map();
@@ -123,23 +141,27 @@ async function data(req) {
     fail("Invalid JSON");
   }
 }
-async function validMedia(value, kind) {
+async function validMedia(value, kind, ownerId) {
   if (!value) return "";
   if (typeof value !== "string" || !/^\/media\/[a-f0-9-]+$/.test(value))
     fail("Invalid media reference");
   const m = await db
     .prepare("SELECT * FROM media WHERE id=?")
     .get(value.split("/").pop());
-  if (!m || (kind && !m.mime.startsWith(kind + "/")))
+  if (
+    !m ||
+    !(await owns("media", m.id, ownerId)) ||
+    (kind && !m.mime.startsWith(kind + "/"))
+  )
     fail("Media not found or wrong type");
   return value;
 }
-async function validateQuiz(input, id = crypto.randomUUID()) {
+async function validateQuiz(input, ownerId, id = crypto.randomUUID()) {
   const q = {
     id,
     title: bounded(input.title, 120, "quiz title"),
     description: bounded(input.description || "", 1000, "description", false),
-    music: await validMedia(input.music, "audio"),
+    music: await validMedia(input.music, "audio", ownerId),
     rounds: [],
   };
   if (
@@ -151,21 +173,21 @@ async function validateQuiz(input, id = crypto.randomUUID()) {
   let count = 0;
   for (const r of input.rounds) {
     const round = {
-      title: bounded(r.title, 100, "round title"),
+      title: bounded(r.title || "", 100, "round title", false),
       questions: [],
     };
     if (!Array.isArray(r.questions) || !r.questions.length)
       fail("Each round needs at least one question.");
     for (const x of r.questions) {
       if (++count > 200) fail("Maximum 200 questions per quiz.");
-      if (!["choice", "boolean", "text"].includes(x.type))
+      if (!["choice", "multi", "boolean", "text"].includes(x.type))
         fail("Invalid question type");
       const question = {
         type: x.type,
         text: bounded(x.text, 1000, "question"),
         seconds: Number(x.seconds),
         points: Number(x.points),
-        media: await validMedia(x.media),
+        media: await validMedia(x.media, undefined, ownerId),
       };
       question.mediaType = question.media
         ? (
@@ -207,16 +229,31 @@ async function validateQuiz(input, id = crypto.randomUUID()) {
         question.options = question.options.map((a) =>
           bounded(a, 200, "answer choice"),
         );
-        question.correct =
-          x.correct === null || x.correct === undefined || x.correct === ""
-            ? -1
-            : Number(x.correct);
-        if (
-          !Number.isInteger(question.correct) ||
-          question.correct < 0 ||
-          question.correct >= question.options.length
-        )
-          fail("Select a correct answer.");
+        if (x.type === "multi") {
+          if (
+            !Array.isArray(x.correctAnswers) ||
+            !x.correctAnswers.length ||
+            x.correctAnswers.length > question.options.length ||
+            new Set(x.correctAnswers).size !== x.correctAnswers.length ||
+            x.correctAnswers.some(
+              (i) =>
+                !Number.isInteger(i) || i < 0 || i >= question.options.length,
+            )
+          )
+            fail("Select the correct options for this multi-answer question.");
+          question.correctAnswers = [...x.correctAnswers].sort((a, b) => a - b);
+        } else {
+          question.correct =
+            x.correct === null || x.correct === undefined || x.correct === ""
+              ? -1
+              : Number(x.correct);
+          if (
+            !Number.isInteger(question.correct) ||
+            question.correct < 0 ||
+            question.correct >= question.options.length
+          )
+            fail("Select a correct answer.");
+        }
       }
       round.questions.push(question);
     }
@@ -286,9 +323,11 @@ const server = http.createServer(async (req, res) => {
           fail("Use a password with 12–128 characters.");
         const organization = bounded(x.organization, 120, "organization name");
         const password = await passwordHash(x.password);
+        const ownerId = crypto.randomUUID();
         await db
           .prepare("INSERT INTO admins VALUES (?,?,?,?)")
-          .run(crypto.randomUUID(), email, password, organization);
+          .run(ownerId, email, password, organization);
+        await migrateOwnership(ownerId);
         return json(res, 201, {
           ok: true,
         });
@@ -390,6 +429,7 @@ const server = http.createServer(async (req, res) => {
         },
       );
     }
+    if (await features.handle(req, res, p)) return;
     if (p.startsWith("/api/")) {
       const admin = await requireUser(req);
       if (p === "/api/recovery-code" && req.method === "POST") {
@@ -432,7 +472,7 @@ const server = http.createServer(async (req, res) => {
           "Content-Disposition": "attachment; filename=quizzes-backup.zip",
           "Cache-Control": "no-store",
         });
-        return await writeBackup(res);
+        return await writeBackup(res, admin.id);
       }
       if (p === "/api/storage-status" && req.method === "GET")
         return json(res, 200, {
@@ -498,6 +538,11 @@ const server = http.createServer(async (req, res) => {
           await body(req, 5 * 1024 * 1024),
           extension,
           filename.replace(/\.[^.]+$/, "").slice(0, 120),
+          ["auto", "marks", "bold", "color", "highlight"].includes(
+            req.headers["x-answer-style"],
+          )
+            ? req.headers["x-answer-style"]
+            : "auto",
         );
         return json(res, 200, result);
       }
@@ -507,25 +552,30 @@ const server = http.createServer(async (req, res) => {
           200,
           (
             await db
-              .prepare("SELECT document FROM quizzes ORDER BY updated DESC")
-              .all()
+              .prepare(
+                "SELECT document FROM quizzes WHERE id IN (SELECT item_id FROM ownership WHERE kind='quizzes' AND owner_id=?) ORDER BY updated DESC",
+              )
+              .all(admin.id)
           ).map((r) => JSON.parse(r.document)),
         );
       if (p === "/api/quizzes" && req.method === "POST") {
-        const q = await validateQuiz(await data(req));
-        await db
-          .prepare("INSERT INTO quizzes VALUES (?,?,?)")
-          .run(q.id, JSON.stringify(q), Date.now());
+        const q = await validateQuiz(await data(req), admin.id);
+        await db.withTransaction(async (tx) => {
+          await tx
+            .prepare("INSERT INTO quizzes VALUES (?,?,?)")
+            .run(q.id, JSON.stringify(q), Date.now());
+          await tx
+            .prepare("INSERT INTO ownership VALUES (?,?,?)")
+            .run("quizzes", q.id, admin.id);
+        });
         return json(res, 201, q);
       }
       const match = p.match(/^\/api\/quizzes\/([a-f0-9-]+)$/);
       if (match) {
-        if (
-          !(await db.prepare("SELECT id FROM quizzes WHERE id=?").get(match[1]))
-        )
+        if (!(await owns("quizzes", match[1], admin.id)))
           fail("Quiz not found.", 404);
         if (req.method === "PUT") {
-          const q = await validateQuiz(await data(req), match[1]);
+          const q = await validateQuiz(await data(req), admin.id, match[1]);
           await db
             .prepare("UPDATE quizzes SET document=?,updated=? WHERE id=?")
             .run(JSON.stringify(q), Date.now(), q.id);
@@ -549,9 +599,14 @@ const server = http.createServer(async (req, res) => {
           240,
         );
         await mediaStore.write(id, b, mime);
-        await db
-          .prepare("INSERT INTO media VALUES (?,?,?)")
-          .run(id, mime, name);
+        await db.withTransaction(async (tx) => {
+          await tx
+            .prepare("INSERT INTO media VALUES (?,?,?)")
+            .run(id, mime, name);
+          await tx
+            .prepare("INSERT INTO ownership VALUES (?,?,?)")
+            .run("media", id, admin.id);
+        });
         return json(res, 201, {
           url: "/media/" + id,
           mime,
@@ -563,8 +618,10 @@ const server = http.createServer(async (req, res) => {
           200,
           (
             await db
-              .prepare("SELECT document FROM reports ORDER BY ended DESC")
-              .all()
+              .prepare(
+                "SELECT document FROM reports WHERE id IN (SELECT item_id FROM ownership WHERE kind='reports' AND owner_id=?) ORDER BY ended DESC",
+              )
+              .all(admin.id)
           ).map((r) => JSON.parse(r.document)),
         );
       fail("API endpoint not found.", 404);
@@ -572,12 +629,15 @@ const server = http.createServer(async (req, res) => {
     if (p.startsWith("/media/")) {
       const id = p.slice(7);
       const m = await db.prepare("SELECT * FROM media WHERE id=?").get(id);
-      if (!m) fail("Not found", 404);
+      if (!m || !(await features.mediaAccess(req, id))) fail("Not found", 404);
       return await mediaStore.serve(req, res, id, m.mime);
     }
     const files = {
       "/": "index.html",
       "/join": "index.html",
+      "/play": "index.html",
+      "/invite": "index.html",
+      "/extensions.js": "extensions.js",
       "/index.html": "index.html",
       "/styles.css": "styles.css",
       "/app.js": "app.js",
@@ -638,6 +698,15 @@ function state(g) {
     index: g.index,
     total: g.questions.length,
     deadline: g.deadline,
+    musicState: g.musicState,
+    leaderboardVisible: g.leaderboardVisible,
+    upcomingRound:
+      g.status === "round_intro"
+        ? rules.roundLabel(
+            g.questions[g.index + 1].roundIndex,
+            g.questions[g.index + 1].round,
+          )
+        : null,
     participants: [...g.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -655,11 +724,15 @@ function question(g) {
     text: q.text,
     type: q.type,
     options: q.options,
-    media: q.media,
+    media: features.mediaURL(q.media),
     mediaType: q.mediaType,
     seconds: q.seconds,
     points: q.points,
     round: q.round,
+    roundLabel: rules.roundLabel(q.roundIndex, q.round),
+    lastInRound:
+      !g.questions[g.index + 1] ||
+      g.questions[g.index + 1].roundIndex !== q.roundIndex,
     roundIndex: q.roundIndex,
     roundCount: g.quiz.rounds.length,
     index: g.index,
@@ -669,7 +742,13 @@ function question(g) {
 function result(g) {
   const q = current(g);
   return {
-    correct: q.type === "text" ? q.accepted.join(" / ") : q.options[q.correct],
+    correct: rules.solution(q),
+    correctIndices: q.type === "text" ? [] : rules.correctIndices(q),
+    roundEnded:
+      !g.questions[g.index + 1] ||
+      g.questions[g.index + 1].roundIndex !== q.roundIndex,
+    roundLabel: rules.roundLabel(q.roundIndex, q.round),
+    leaderboardVisible: g.leaderboardVisible,
     leaderboard: ranking(g),
     stats: g.stats,
   };
@@ -678,6 +757,9 @@ function finishQuestion(g) {
   if (g.status !== "question") return;
   clearTimeout(g.timer);
   g.status = "results";
+  g.leaderboardVisible =
+    !g.questions[g.index + 1] ||
+    g.questions[g.index + 1].roundIndex !== current(g).roundIndex;
   for (const p of g.players.values()) {
     p.score += p.pending || 0;
     p.pending = 0;
@@ -709,9 +791,18 @@ async function endGame(g, reason = "Host ended the game") {
     answers: g.history,
   };
   try {
-    await db
-      .prepare("INSERT INTO reports VALUES (?,?,?) ON CONFLICT (id) DO NOTHING")
-      .run(report.id, JSON.stringify(report), report.ended);
+    await db.withTransaction(async (tx) => {
+      await tx
+        .prepare(
+          "INSERT INTO reports VALUES (?,?,?) ON CONFLICT (id) DO NOTHING",
+        )
+        .run(report.id, JSON.stringify(report), report.ended);
+      await tx
+        .prepare(
+          "INSERT INTO ownership VALUES (?,?,?) ON CONFLICT(kind,item_id) DO NOTHING",
+        )
+        .run("reports", report.id, g.adminId);
+    });
   } catch (e) {
     g.status = previousStatus;
     throw e;
@@ -731,12 +822,24 @@ async function endGame(g, reason = "Host ended the game") {
   );
 }
 async function startQuestion(g) {
-  if (!["lobby", "results"].includes(g.status))
+  if (!["lobby", "results", "round_intro"].includes(g.status))
     fail("Wait for the current question to finish.");
   if (g.index + 1 >= g.questions.length)
     return await endGame(g, "Quiz completed");
+  if (
+    g.status !== "round_intro" &&
+    g.index >= 0 &&
+    g.questions[g.index + 1].roundIndex !== current(g).roundIndex
+  ) {
+    g.status = "round_intro";
+    g.deadline = null;
+    g.leaderboardVisible = false;
+    broadcast(g, "round_intro", { game: state(g) });
+    return;
+  }
   g.index++;
   g.status = "question";
+  g.leaderboardVisible = false;
   g.startedAt = Date.now();
   g.deadline = g.startedAt + current(g).seconds * 1000;
   g.stats = {};
@@ -757,6 +860,7 @@ function sync(ws, g, type, extra = {}) {
     result: g.status === "results" ? result(g) : null,
     leaderboard: g.status === "ended" ? ranking(g) : null,
     serverNow: Date.now(),
+    visibleLeaderboard: g.leaderboardVisible ? ranking(g) : [],
     ...extra,
   });
 }
@@ -814,6 +918,8 @@ wss.on("connection", (ws, req) => {
           ).length >= 3
         )
           fail("End an existing game first (maximum 3).");
+        if (!(await owns("quizzes", String(msg.quizId || ""), admin.id)))
+          fail("Choose a saved quiz.");
         const row = await db
           .prepare("SELECT document FROM quizzes WHERE id=?")
           .get(String(msg.quizId || ""));
@@ -835,6 +941,8 @@ wss.on("connection", (ws, req) => {
           host: ws,
           created: Date.now(),
           status: "lobby",
+          musicState: { playing: true, volume: 0.3 },
+          leaderboardVisible: false,
           index: -1,
           deadline: null,
           questions: quiz.rounds.flatMap((r, i) =>
@@ -856,7 +964,7 @@ wss.on("connection", (ws, req) => {
         ws.sessionHash = hash(token(req));
         return sync(ws, g, "game_created", {
           hostToken,
-          music: quiz.music,
+          music: features.mediaURL(quiz.music),
         });
       }
       if (msg.type === "resume_host") {
@@ -876,7 +984,7 @@ wss.on("connection", (ws, req) => {
         ws.sessionHash = hash(token(req));
         broadcast(g, "host_online", {});
         return sync(ws, g, "host_resumed", {
-          music: g.quiz.music,
+          music: features.mediaURL(g.quiz.music),
         });
       }
       if (msg.type === "join_game" || msg.type === "resume_player") {
@@ -921,7 +1029,7 @@ wss.on("connection", (ws, req) => {
         ws.playerId = p.id;
         g.clients.add(ws);
         sync(ws, g, "joined", {
-          music: g.quiz.music,
+          music: features.mediaURL(g.quiz.music),
           playerId: p.id,
           playerToken: p.resumeToken,
           answered: p.answered,
@@ -932,11 +1040,38 @@ wss.on("connection", (ws, req) => {
       }
       const g = ws.game;
       if (!g) fail("Join a game first.");
+      if (msg.type === "refresh_music")
+        return send(ws, "music_refreshed", {
+          music: features.mediaURL(g.quiz.music),
+        });
       if (ws.role === "host") {
         const admin = await requireUser(req);
         if (ws.readyState !== 1) return;
         if (admin.id !== g.adminId || g.host !== ws)
           fail("Not authorized.", 403);
+        if (msg.type === "set_music") {
+          if (
+            typeof msg.playing !== "boolean" ||
+            typeof msg.volume !== "number" ||
+            !Number.isFinite(msg.volume) ||
+            msg.volume < 0 ||
+            msg.volume > 1
+          )
+            fail("Invalid music control.");
+          g.musicState = { playing: msg.playing, volume: msg.volume };
+          broadcast(g, "music_control", { musicState: g.musicState });
+          return;
+        }
+        if (msg.type === "set_leaderboard") {
+          if (typeof msg.visible !== "boolean")
+            fail("Invalid leaderboard control.");
+          g.leaderboardVisible = msg.visible;
+          broadcast(g, "leaderboard_control", {
+            visible: msg.visible,
+            leaderboard: msg.visible ? ranking(g) : [],
+          });
+          return;
+        }
         if (msg.type === "start_question" || msg.type === "next_question")
           return await startQuestion(g);
         if (msg.type === "reveal_answers") return finishQuestion(g);
@@ -951,26 +1086,15 @@ wss.on("connection", (ws, req) => {
         if (p.answered) fail("Your answer is already locked in.");
         const q = current(g);
         let answer = msg.answer;
-        let correct;
-        if (q.type === "text") {
-          answer = bounded(answer, 200, "answer");
-          correct = q.accepted.some((a) => normalize(a) === normalize(answer));
-        } else {
-          if (
-            !Number.isInteger(answer) ||
-            answer < 0 ||
-            answer >= q.options.length
-          )
-            fail("Choose a valid answer.");
-          correct = answer === q.correct;
-        }
+        const credit = rules.grade(q, answer);
+        const correct = credit === 1;
         const elapsed = Date.now() - g.startedAt;
-        const points = correct
-          ? Math.max(
-              100,
-              Math.round(q.points * (1 - (0.5 * elapsed) / (q.seconds * 1000))),
-            )
-          : 0;
+        const points = Math.round(
+          Math.max(
+            100,
+            Math.round(q.points * (1 - (0.5 * elapsed) / (q.seconds * 1000))),
+          ) * credit,
+        );
         p.answered = true;
         p.pending = points;
         g.history.push({
@@ -978,10 +1102,13 @@ wss.on("connection", (ws, req) => {
           questionIndex: g.index,
           answer,
           correct,
+          credit,
           points,
           elapsedMs: elapsed,
         });
-        if (q.type !== "text") g.stats[answer] = (g.stats[answer] || 0) + 1;
+        if (q.type !== "text")
+          for (const selected of q.type === "multi" ? answer : [answer])
+            g.stats[selected] = (g.stats[selected] || 0) + 1;
         send(ws, "answer_received", {
           accepted: true,
         });

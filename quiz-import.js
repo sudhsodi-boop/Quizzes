@@ -6,7 +6,7 @@ const MAX_TEXT = 200000;
 function issue(message, status = 400) {
   return Object.assign(new Error(message), { status });
 }
-function parseQuizText(source, title = "Imported quiz") {
+function parseQuizText(source, title = "Imported quiz", styleMode = "auto") {
   if (typeof source !== "string" || source.length > MAX_TEXT)
     throw issue(
       "Use at most 200,000 characters. Split longer documents into smaller quizzes.",
@@ -39,7 +39,17 @@ function parseQuizText(source, title = "Imported quiz") {
     group.items.push(current);
     all.push(current);
   }
-  for (const line of lines) {
+  for (const rawLine of lines) {
+    let line = rawLine;
+    const style = new Set();
+    const marker = line.match(/^\[\[fmt:([a-z,]+)\]\]\s*/);
+    if (marker) {
+      marker[1].split(",").forEach((k) => style.add(k));
+      line = line.slice(marker[0].length);
+    }
+    if (/^\*\*.*\*\*$/.test(line) || /^[A-Fa-f][).:]\s+\*\*.*\*\*$/.test(line))
+      style.add("bold");
+    line = line.replace(/\*\*(.*?)\*\*/g, "$1");
     if (/^answer\s*key\s*:?$/i.test(line)) {
       keyMode = true;
       current = null;
@@ -64,7 +74,7 @@ function parseQuizText(source, title = "Imported quiz") {
       continue;
     }
     const answer = line.match(
-      /^(?:correct\s*(?:answer|option)|answer|ans|accepted\s*answers?)\s*[:=\-]\s*(.*)$/i,
+      /^(?:correct\s*(?:answers?|options?)|answers?|ans|accepted\s*answers?)\s*[:=\-]\s*(.*)$/i,
     );
     if (answer && current) {
       current.answers.push(answer[1]);
@@ -83,6 +93,7 @@ function parseQuizText(source, title = "Imported quiz") {
       current.choices.push({
         label: (option[2] || option[3]).toUpperCase(),
         text,
+        format: [...style],
       });
       if (marked) current.marked.push(current.choices.length - 1);
       continue;
@@ -139,28 +150,71 @@ function parseQuizText(source, title = "Imported quiz") {
     if (item.choices.length) {
       q.type = "choice";
       q.options = item.choices.map((o) => o.text);
-      const choices = answers.map((a) => {
-        const letter = a.match(/^\(?([A-F])\)?[).:]?(?:\s+(.+))?$/i);
-        const byLetter = letter
-          ? item.choices.findIndex(
-              (o) =>
-                o.label === letter[1].toUpperCase() &&
-                (!letter[2] || norm(o.text) === norm(letter[2])),
-            )
-          : -1;
-        const byText = item.choices
+      const lookup = (a) => {
+        const exact = item.choices
           .map((o, i) => (norm(o.text) === norm(a) ? i : -1))
           .filter((i) => i >= 0);
-        return byLetter >= 0 ? byLetter : byText.length === 1 ? byText[0] : -1;
-      });
-      const selected = [...new Set([...item.marked, ...choices])];
-      const labels = item.choices.map((o) => o.label);
+        if (exact.length === 1) return [exact[0]];
+        if (/^[A-F](?:\s*(?:,|and|&|\+|\/|;)\s*[A-F])+[.]?$/i.test(a))
+          return a
+            .match(/\b[A-F]\b/gi)
+            .map((l) =>
+              item.choices.findIndex((o) => o.label === l.toUpperCase()),
+            );
+        const letter = a.match(/^\(?([A-F])\)?[).:]?(?:\s+(.+))?$/i);
+        return [
+          letter
+            ? item.choices.findIndex(
+                (o) =>
+                  o.label === letter[1].toUpperCase() &&
+                  (!letter[2] || norm(o.text) === norm(letter[2])),
+              )
+            : -1,
+        ];
+      };
+      const sets = answers.map((a) =>
+        [...new Set(lookup(a))].sort((a, b) => a - b),
+      );
+      let selected = [];
+      const marked = [...new Set(item.marked)].sort((a, b) => a - b);
+      if (sets.length) {
+        if (
+          sets.every(
+            (a) =>
+              a.every((i) => i >= 0) &&
+              JSON.stringify(a) === JSON.stringify(sets[0]),
+          ) &&
+          (!marked.length || JSON.stringify(marked) === JSON.stringify(sets[0]))
+        )
+          selected = sets[0];
+      } else if (marked.length) selected = marked;
+      else if (styleMode !== "marks") {
+        const candidates = item.choices
+          .map((o, i) =>
+            o.format.some((f) => styleMode === "auto" || styleMode === f)
+              ? i
+              : -1,
+          )
+          .filter((i) => i >= 0);
+        if (candidates.length && candidates.length < item.choices.length) {
+          selected = candidates;
+          warnings.push(
+            `Question ${index + 1}: answer inferred from formatting (${styleMode}). Confirm the formatting really marks correct answers.`,
+          );
+        } else if (candidates.length)
+          warnings.push(
+            `Question ${index + 1}: every option uses that formatting, so it cannot identify the answer.`,
+          );
+      }
       if (
-        selected.length === 1 &&
-        selected[0] >= 0 &&
-        new Set(labels).size === labels.length
+        new Set(item.choices.map((o) => o.label)).size !== item.choices.length
       )
-        q.correct = selected[0];
+        selected = [];
+      if (selected.length === 1) q.correct = selected[0];
+      else if (selected.length > 1) {
+        q.type = "multi";
+        q.correctAnswers = selected;
+      }
       if (q.options.length < 2 || q.options.length > 6)
         warnings.push(`Question ${index + 1}: use 2–6 answer options.`);
       if (q.options.some((o) => o.length > 200))
@@ -168,6 +222,7 @@ function parseQuizText(source, title = "Imported quiz") {
           `Question ${index + 1}: shorten answer options to 200 characters.`,
         );
       if (
+        q.type !== "multi" &&
         q.options.length === 2 &&
         norm(q.options[0]) === "true" &&
         norm(q.options[1]) === "false"
@@ -192,7 +247,7 @@ function parseQuizText(source, title = "Imported quiz") {
     }
     if (
       (q.type === "text" && !q.accepted.length) ||
-      (q.type !== "text" && q.correct < 0)
+      (q.type !== "text" && q.type !== "multi" && q.correct < 0)
     ) {
       needsAnswers++;
       warnings.push(
@@ -230,11 +285,11 @@ function parseQuizText(source, title = "Imported quiz") {
     warnings,
     recognized: all.length,
     needsAnswers,
-    sourceText: source,
+    sourceText: source.replace(/^\[\[fmt:[a-z,]+\]\]\s*/gm, ""),
   };
 }
 let importing = false;
-async function importDocument(buffer, extension, title) {
+async function importDocument(buffer, extension, title, styleMode = "auto") {
   if (buffer.length > 5 * 1024 * 1024)
     throw issue("Maximum document size is 5 MB.", 413);
   if (!["txt", "pdf", "docx"].includes(extension))
@@ -250,7 +305,7 @@ async function importDocument(buffer, extension, title) {
   try {
     return await new Promise((resolve, reject) => {
       const worker = new Worker(path.join(__dirname, "quiz-import-worker.js"), {
-        workerData: { buffer, extension, title },
+        workerData: { buffer, extension, title, styleMode },
         resourceLimits: {
           maxOldGenerationSizeMb: 128,
           maxYoungGenerationSizeMb: 16,

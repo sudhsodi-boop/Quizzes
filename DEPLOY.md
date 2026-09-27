@@ -91,7 +91,7 @@ This is **recovery-code reset, not email reset**; no email service or domain is 
 
 ### Download a backup
 
-Use **Settings → Download backup ZIP**, confirming your current host password. Pause editing/uploads during the backup. For large media collections, use the command-line version on your own computer with the same private database/media settings:
+Use **Settings → Download backup ZIP**, confirming your current host password. This v0.5 in-app backup covers only the signed-in host's private workspace; the CLI covers the entire installation. Pause editing/uploads during the backup. For large media collections, use the command-line version on your own computer with the same private database/media settings:
 
 ```sh
 npm ci
@@ -114,6 +114,10 @@ If migrating existing preview data, export it first and restore into the fresh S
 
 ## Current boundaries
 
-The public deployment is awaiting your accounts/configuration. Local PostgreSQL and SQLite integration tests passed, including 100 simulated players, recovery-code rotation/single-use/concurrency, backup and restore. Supabase Storage behavior was tested against a local HTTP contract fixture; **actual hosted Supabase, TLS, Render deployment and a real-device load test are not yet verified**.
+The owner confirmed the earlier Render/Supabase deployment works. This v0.5 update is locally tested and still needs deployment to that installation. Local PostgreSQL and SQLite integration tests passed, including 100 simulated players, recovery-code rotation/single-use/concurrency, backup and restore. Supabase Storage behavior was tested against a local HTTP contract fixture; **actual hosted Supabase, TLS, Render deployment and a real-device load test are not yet verified**.
 
-Active games still reside in one server's memory and do not survive a crash or restart. A graceful shutdown attempts to save an interrupted report. Keep deployments outside event times and do not run multiple app replicas. Host invitations/roles, synchronized audio, dedicated event sounds, automated backup scheduling, report retention/deletion tools, media cleanup/scanning and full accessibility/security auditing remain future work after the essentials pilot.
+Active games still reside in one server's memory and do not survive a crash or restart. A graceful shutdown attempts to save an interrupted report. Keep deployments outside event times and do not run multiple app replicas. Shared-workspace roles, precisely synchronized audio, dedicated event-sound configuration, automated backup scheduling, report retention/deletion tools, media cleanup/scanning and full accessibility/security auditing remain future work after the essentials pilot.
+
+## Updating an existing installation
+
+Use [APPLY-v0.5-update.md](APPLY-v0.5-update.md), not the fresh-account setup above. Preserve working passwords, database/media settings and CA certificate. Several legacy hosts require an explicit WORKSPACE_OWNER_EMAIL choice before migration. Never roll back to pre-v0.5 code against a multi-workspace database.

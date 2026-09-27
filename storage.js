@@ -3,7 +3,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { promisify } = require("node:util");
 const scrypt = promisify(crypto.scrypt);
-const { validateHostSetup } = require("./startup-diagnostics");
+const { validateHostSetup, startupError } = require("./startup-diagnostics");
 const dataDir = process.env.DATA_DIR || path.join(__dirname, "data");
 const cloud = !!process.env.DATABASE_URL;
 if (
@@ -22,6 +22,11 @@ CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, name 
 CREATE TABLE IF NOT EXISTS reports (id TEXT PRIMARY KEY, document TEXT NOT NULL, ended BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS recovery_codes (digest TEXT PRIMARY KEY, admin_id TEXT UNIQUE NOT NULL REFERENCES admins(id), created BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS ownership (kind TEXT NOT NULL, item_id TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES admins(id), PRIMARY KEY(kind,item_id));
+CREATE INDEX IF NOT EXISTS ownership_by_owner ON ownership(owner_id,kind);
+CREATE TABLE IF NOT EXISTS invitations (digest TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES admins(id), expires BIGINT NOT NULL, used BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS publications (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES admins(id), document TEXT NOT NULL, created BIGINT NOT NULL, closes BIGINT NOT NULL);
+CREATE TABLE IF NOT EXISTS attempts (id TEXT PRIMARY KEY, publication_id TEXT NOT NULL REFERENCES publications(id), browser_hash TEXT NOT NULL, name TEXT NOT NULL, document TEXT NOT NULL, updated BIGINT NOT NULL, UNIQUE(publication_id,browser_hash));
 `;
 const TABLES = [
   "admins",
@@ -30,6 +35,10 @@ const TABLES = [
   "reports",
   "recovery_codes",
   "metadata",
+  "ownership",
+  "invitations",
+  "publications",
+  "attempts",
 ];
 let db;
 if (cloud) {
@@ -47,8 +56,8 @@ if (cloud) {
   );
   const qualify = (sql) =>
     sql.replace(
-      /\b(admins|sessions|quizzes|media|reports|recovery_codes|metadata)\b/g,
-      (name) => "quizzes_private." + name,
+      /'(?:''|[^'])*'|\b(admins|sessions|quizzes|media|reports|recovery_codes|metadata|ownership|invitations|publications|attempts)\b/g,
+      (text, name) => (name ? "quizzes_private." + name : text),
     );
   const api = (client) => ({
     prepare(sql) {
@@ -196,24 +205,97 @@ const ready = (async () => {
         "Initial host account created. Remove INITIAL_ADMIN_PASSWORD from the hosting environment after signing in.",
       );
     }
+    await migrateOwnership();
   } catch (error) {
     if (!error.startupStage) error.startupStage = stage;
     throw error;
   }
 })();
-async function exportDatabase() {
+async function migrateOwnership(explicitOwner) {
+  await db.withTransaction(async (tx) => {
+    if (
+      await tx
+        .prepare("SELECT value FROM metadata WHERE key=?")
+        .get("ownership_v1")
+    )
+      return;
+    const admins = await tx.prepare("SELECT id,email FROM admins").all();
+    if (!admins.length) return;
+    const target = (process.env.WORKSPACE_OWNER_EMAIL || "")
+      .trim()
+      .toLowerCase();
+    const owner =
+      explicitOwner ||
+      (admins.length === 1
+        ? admins[0].id
+        : admins.find((a) => a.email === target)?.id);
+    if (!owner) throw startupError("WORKSPACE_OWNER_REQUIRED", "HOST_SETUP");
+    for (const kind of ["quizzes", "media", "reports"]) {
+      for (const row of await tx.prepare("SELECT id FROM " + kind).all())
+        await tx
+          .prepare(
+            "INSERT INTO ownership (kind,item_id,owner_id) VALUES (?,?,?) ON CONFLICT(kind,item_id) DO NOTHING",
+          )
+          .run(kind, row.id, owner);
+    }
+    await tx
+      .prepare(
+        "INSERT INTO metadata (key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING",
+      )
+      .run("ownership_v1", "1");
+  });
+}
+async function owns(kind, id, owner) {
+  return !!(await db
+    .prepare(
+      "SELECT item_id FROM ownership WHERE kind=? AND item_id=? AND owner_id=?",
+    )
+    .get(kind, id, owner));
+}
+async function exportDatabase(ownerId) {
   return db.withTransaction(async (tx) => {
     const tables = {};
-    for (const table of TABLES)
-      tables[table] = await tx.prepare("SELECT * FROM " + table).all();
+    for (const table of TABLES) {
+      if (table === "invitations") {
+        tables[table] = [];
+        continue;
+      } // Invites are access grants, not portable data.
+      if (!ownerId) {
+        tables[table] = await tx.prepare("SELECT * FROM " + table).all();
+        continue;
+      }
+      if (table === "metadata") {
+        tables[table] = [
+          { key: "seeded", value: "1" },
+          { key: "ownership_v1", value: "1" },
+        ];
+        continue;
+      }
+      const condition =
+        table === "admins"
+          ? "id=?"
+          : table === "recovery_codes"
+            ? "admin_id=?"
+            : ["ownership", "publications"].includes(table)
+              ? "owner_id=?"
+              : table === "attempts"
+                ? "publication_id IN (SELECT id FROM publications WHERE owner_id=?)"
+                : "id IN (SELECT item_id FROM ownership WHERE kind='" +
+                  table +
+                  "' AND owner_id=?)";
+      tables[table] = await tx
+        .prepare("SELECT * FROM " + table + " WHERE " + condition)
+        .all(ownerId);
+    }
     return {
       format: "quizzes-backup",
-      version: 1,
-      created: new Date().toISOString(),
+      version: 2,
+      created: Date.now(),
       tables,
     };
   });
 }
+
 module.exports = {
   db,
   dataDir,
@@ -224,4 +306,6 @@ module.exports = {
   passwordMatches,
   hash,
   exportDatabase,
+  owns,
+  migrateOwnership,
 };

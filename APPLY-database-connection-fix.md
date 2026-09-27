@@ -1,5 +1,7 @@
 # Quizzes: separate the database password from the connection URL
 
+> **v0.5 users:** this fix is already included. Do not install an older patch ZIP over v0.5. Keep your current source and use the configuration guidance below only.
+
 The deployment's `DB_AUTH_FAILED` message means PostgreSQL rejected the credentials supplied by the app. It does not prove which saved value is wrong. The later Render "No open ports detected" message is a consequence: the app does not start listening until initialization succeeds. Do not change the port or disable TLS to work around this.
 
 This update provides a more direct configuration path: set **DATABASE_PASSWORD** privately in Render. The password is passed to the PostgreSQL client exactly as entered—without URL encoding, decoding, trimming, interpolation, or logging. The existing DATABASE_URL supplies the host, username, port and database name; its embedded password is ignored when DATABASE_PASSWORD is set. Query-string parameters cannot silently override the chosen credentials or TLS settings.

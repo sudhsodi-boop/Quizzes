@@ -148,7 +148,7 @@ async function serve(req, res, id, mime) {
     const h = {
       "Content-Type": mime,
       "Accept-Ranges": "bytes",
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": "private, no-store",
     };
     for (const name of ["content-length", "content-range"])
       if (r.headers.has(name)) h[name] = r.headers.get(name);
@@ -163,7 +163,7 @@ async function serve(req, res, id, mime) {
   const h = {
     "Content-Type": mime,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "private, max-age=3600",
+    "Cache-Control": "private, no-store",
   };
   let start = 0,
     end = size - 1,

@@ -1,0 +1,21 @@
+Title: Community rounds example
+Round 1: Easy
+1. Which of these are prime numbers?
+A) 2
+B) 4
+C) 3
+D) 6
+Answers: A, C
+
+2. The Earth orbits the Sun. (True/False)
+Answer: True
+
+Round 2
+3. Which of these are fruits?
+A) Apple ✓
+B) Banana ✓
+C) Carrot
+D) Potato
+
+4. Finish the phrase: Better ____.
+Answer: together

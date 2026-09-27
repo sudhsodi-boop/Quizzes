@@ -158,6 +158,21 @@
             </div>
           </div>
           <div class="library-grid" id="library"></div>
+          <section class="panel publications-panel">
+            <div class="page-title">
+              <div>
+                <h2>Published for 24 hours</h2>
+                <p class="muted">
+                  Participants play independently. One attempt per browser;
+                  answers release after closing.
+                </p>
+              </div>
+              <button id="refreshPublications" class="secondary-btn">
+                Refresh publications
+              </button>
+            </div>
+            <div id="publicationList"></div>
+          </section>
         </section>
         <section id="editor" class="view">
           <form id="editorForm">
@@ -226,6 +241,21 @@
                 </button>
               </div>
             </div>
+            <div class="round-tools panel">
+              <b>Organize your rounds</b>
+              <p class="muted">
+                Select questions below, then move them together. Round names are
+                optional. Empty rounds are omitted when saving.
+              </p>
+              <div class="button-row">
+                <label
+                  >Move selected to
+                  <select id="bulkRound"></select></label
+                ><button id="moveSelected" type="button" class="secondary-btn">
+                  Move selected questions
+                </button>
+              </div>
+            </div>
             <div id="roundEditor"></div>
             <button type="button" class="outline-btn" id="addRound">
               ＋ Add round
@@ -247,6 +277,27 @@
           <div id="reportList"></div>
         </section>
         <section id="settings" class="view">
+          <div class="panel invite-panel">
+            <h2>Invite a friend</h2>
+            <p>
+              Your friend gets their own private workspace, quizzes and results.
+              You will not share content automatically. This installation's
+              hosting and storage quotas are still shared.
+            </p>
+            <button class="primary-btn" id="createInvite">
+              Create private invitation
+            </button>
+            <p id="inviteStatus" role="status"></p>
+            <input
+              id="inviteLink"
+              readonly
+              hidden
+              aria-label="Private friend invitation link"
+            /><small
+              >One-use link · expires in 24 hours · send privately. There is no
+              public signup.</small
+            >
+          </div>
           <div class="page-title">
             <div>
               <div class="eyebrow">WORKSPACE</div>
@@ -514,6 +565,11 @@
               <div id="hostMedia"></div>
               <div class="answer-grid" id="hostOptions"></div>
               <div id="hostResults"></div>
+              <section
+                id="hostLeaderboard"
+                class="live-leaderboard"
+                hidden
+              ></section>
             </div>
             <div id="lobbyMusic"></div>
             <div
@@ -529,6 +585,8 @@
                 rel="noopener"
                 href="/join"
                 >Open player view ↗</a
+              ><button class="secondary-btn" id="toggleLeaderboard">
+                Show leaderboard</button
               ><button class="secondary-btn" id="endGame">End game</button
               ><button class="primary-btn" id="nextQuestion">
                 Start question →
@@ -608,6 +666,9 @@
             <p class="muted" id="playerHint">Waiting for your host to start.</p>
             <div id="playerMedia"></div>
             <div class="player-answers" id="playerOptions"></div>
+            <button id="submitMulti" class="primary-btn full-btn" hidden>
+              Submit selected answers
+            </button>
             <form id="textAnswerForm" hidden>
               <label
                 >Your answer<input
@@ -621,6 +682,11 @@
             </form>
             <p id="answerStatus" class="answer-status" role="status"></p>
             <div id="playerResults"></div>
+            <section
+              id="playerLeaderboard"
+              class="live-leaderboard"
+              hidden
+            ></section>
             <button class="text-btn" id="leavePlayer">Leave game</button>
           </div>
         </main>
@@ -652,6 +718,23 @@
         Nothing is saved until you review it.
       </p>
       <form id="importForm">
+        <label
+          >How are correct answers marked?<select id="answerStyle">
+            <option value="auto">
+              Auto: keys, checkmarks and distinct formatting
+            </option>
+            <option value="marks">Only explicit keys and checkmarks</option>
+            <option value="bold">Keys, checkmarks or bold options</option>
+            <option value="highlight">
+              Keys, checkmarks or highlighted options
+            </option>
+            <option value="color">Keys, checkmarks or colored text</option>
+          </select></label
+        >
+        <p class="muted">
+          Formatting is a hint, not proof. Always review inferred answers. For
+          multiple answers, use “Answers: A, C”.
+        </p>
         <label
           >Upload a document<input
             id="documentFile"
@@ -704,7 +787,22 @@ Answer: together</pre>
       </form>
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <main id="independentApp" class="independent-shell" hidden></main>
+    <dialog id="publicationDialog" class="import-dialog">
+      <button
+        class="modal-close"
+        id="closePublicationDialog"
+        aria-label="Close published quiz results"
+      >
+        ×
+      </button>
+      <div id="publicationResults"></div>
+      <button id="exportPublication" class="secondary-btn">
+        Download results CSV
+      </button>
+    </dialog>
     <script src="/quiz-sound.js"></script>
     <script src="/app.js"></script>
+    <script src="/extensions.js"></script>
   </body>
 </html>

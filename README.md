@@ -1,22 +1,35 @@
-# Quizzes · v0.3
+# Quizzes · v0.5
 
-A responsive, single-organization live quiz app for a nonprofit. No subscriptions, billing or participant payments.
+A responsive live and self-paced quiz app for nonprofit use, with invitation-based private host workspaces. No subscriptions, billing or participant payments.
 
-**Deployment status:** prepared for a free testing deployment, not yet deployed in the user's accounts. Temporary Cloudflare tunnels have been retired. Start with **[DEPLOY.md](DEPLOY.md)** for GitHub, Render and Supabase account/setup instructions. Do not send passwords or API keys in chat.
+**Deployment status:** the owner has confirmed the previous version works on their Render/Supabase deployment. This v0.5 update is locally tested and must still be uploaded and deployed there. Use **[APPLY-v0.5-update.md](APPLY-v0.5-update.md)** to update the existing installation, or **[DEPLOY.md](DEPLOY.md)** for a new installation. Do not send passwords or API keys in chat.
 
 ## Implemented
 
 - Host login with scrypt password hashes, HttpOnly/SameSite cookies, password changes and session revocation. Production session cookies use Secure.
 - First production host created from environment secrets entered directly in the hosting dashboard; public registration is disabled in production. Bootstrap never overwrites an existing host.
 - One-time recovery-code download and forgotten-password reset, with code rotation, atomic single-use consumption and session revocation. This does not send email. Owner-assisted recovery is available through a private terminal command.
-- Quiz creation/editing/deletion, single/multiple rounds, move-question-up control, configurable timers and points.
-- Multiple-choice, true/false and typed fill-in-the-blank answers; normalization ignores case, compatibility differences and extra whitespace. Add spelling alternatives explicitly.
-- Question images/audio and optional lobby music. PNG, JPEG, GIF, WebP, MP3, WAV, OGG; 10 MB per file. Playback requires a user action and is not synchronized across devices.
+- Quiz creation/editing/deletion, optional round names, individual/bulk moves between rounds, configurable timers and points. Last-question notices, next-round title screens, automatic cumulative round-end leaderboards and host-triggered leaderboard display.
+- Single-answer choice, multiple-correct-answer questions with partial credit/wrong-selection penalty, true/false and typed fill-in-the-blank answers; normalization ignores case, compatibility differences and extra whitespace. Add spelling alternatives explicitly.
+- Original classic game-show theme: purple geometric backgrounds, shape-coded colorful answer tiles, animated countdown emphasis, answer highlights and a final podium. Reduced-motion support. Original Quizzes branding, not a pixel-for-pixel Kahoot copy.
+- Original procedural background music by default on host and player screens, across lobby, questions and results; countdown/reveal/finish effects. Only the host controls broadcast play/pause and volume; participants have no independent soundtrack controls. Host/Join gestures enable audio; browsers may require another Enable sound tap after a reload. Sound is generated locally and is not sample-synchronized between devices.
+- Question images/audio and optional custom background soundtrack. PNG, JPEG, GIF, WebP, MP3, WAV, OGG; 10 MB per file. Custom music replaces the default and is available on player devices too. Question audio plays manually and ducks the background while playing.
+- Structured-question import with bold, colored/highlighted, checkmarked and multi-answer recognition from text PDFs (up to 50 pages), DOCX, UTF-8 TXT, or pasted text. Review-required draft with source comparison and missing/conflicting answer warnings. No external AI or document retention. Maximum 5 MB, 200,000 extracted characters, 200 questions and 20 rounds. Scans/OCR, embedded-media extraction and generating new questions from prose are not included. Use explicit numbering/option labels; see [Quiz-import-example.txt](Quiz-import-example.txt).
 - Separate host/player connections, code/nickname joining, server timers, duplicate/stale/late-answer rejection, speed scoring, answer reveal and leaderboards. Correct answers and new scores are withheld until results.
 - 100-player limit per room, in-tab reconnect support, score retention after disconnect, actual-data dashboard, persistent completed reports and CSV scoreboards.
 - SQLite/local media for a local installation **or PostgreSQL/private Supabase media for cloud hosting**. Render startup refuses missing external-storage configuration.
-- Private ZIP backup download with password confirmation; includes saved accounts, quizzes, reports, media and recovery-code hashes, but not login sessions, hosting keys or live rooms.
-- Restore command for a fresh destination; refuses to overwrite existing accounts or reports.
+- Private, workspace-scoped ZIP backup download with password confirmation; includes the signed-in host account, quizzes, reports, media, recovery-code hashes, publications and submitted attempts, but not other hosts, invitation links, login sessions, hosting keys or live rooms. The operator CLI backup is installation-wide.
+- Restore command for a fresh destination; supports v1/v2 backups and refuses to overwrite existing accounts or reports.
+- Publish an immutable quiz snapshot for 24 hours, up to 100 browser attempts; nickname entry, saved submitted progress, provisional/final host results and CSV export. Participant scores/solutions appear only after closing. Deadlines are request-enforced, not dependent on background jobs.
+- One-use friend invitations expire in 24 hours. Friends create separate logins and empty private workspaces; no public signup, account fees, shared co-host rights or automatic quiz copying.
+
+## v0.5 behavior and scoring
+
+See **[APPLY-v0.5-update.md](APPLY-v0.5-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
+
+## Database authentication troubleshooting
+
+If a reset password still produces `DB_AUTH_FAILED`, the app now supports an optional **`DATABASE_PASSWORD`** environment variable. Enter the actual database password privately in Render, without URL encoding. This overrides the password in `DATABASE_URL` while retaining that URL's host, username, port and database. Do not create this optional variable with an empty value. TLS verification remains enabled, and recognizable Supabase database/media project identities are checked. See [APPLY-database-connection-fix.md](APPLY-database-connection-fix.md) for patch and deployment instructions.
 
 ## Local setup
 
@@ -30,7 +43,7 @@ npm start
 
 Open `http://localhost:4173`. Participants use `/join`; phones on your network need your computer's LAN address, not localhost. Native build tools may be needed for `better-sqlite3` if no prebuilt binary is available.
 
-The admin command asks for a password privately in an interactive terminal. No default password exists. Additional trusted host accounts share the same organization's entire workspace; this is not a multi-tenant service and does not implement differentiated roles.
+The admin command asks for a password privately in an interactive terminal. No default password exists. Additional accounts have isolated app workspaces. Invite friends from Settings rather than sharing a password. All accounts share installation resources and provider quotas; infrastructure operators still have privileged access. Legacy single-host content is assigned automatically. If several hosts existed before v0.5, set WORKSPACE_OWNER_EMAIL explicitly before upgrading; the app refuses to guess who owns legacy shared content.
 
 For a private development preview only:
 
@@ -61,12 +74,14 @@ Choose Free accounts, stay within limits, and do not authorize upgrades or payme
 | `INITIAL_ADMIN_PASSWORD` | First-host password, 12–128 characters; remove after first login                                   |
 | `ORGANIZATION_NAME`      | First-host organization name                                                                       |
 | `TRUST_PROXY`            | Set `1` only behind a trusted proxy; uses forwarded scheme and nearest forwarded client address    |
+| `WORKSPACE_OWNER_EMAIL` | One-time legacy ownership choice when upgrading an installation with several existing hosts |
+| `DATABASE_PASSWORD` | Optional raw database password override; never set this variable empty |
 | `DATA_DIR`               | Local SQLite/media directory, default `./data`                                                     |
 | `ALLOW_SETUP`            | `true` enables development-only first registration                                                 |
 
 `.env.example` lists names only. The application reads process environment variables; it does not automatically load `.env` files. Configure secrets through your hosting dashboard or a private terminal, not source control. Use Supabase's Session pooler connection string; certificate verification is on by default.
 
-PostgreSQL tables are in `quizzes_private`, not the public API schema. Do not expose that schema in Supabase. A dedicated private media bucket is created/checked at startup. The server's media endpoint intentionally allows viewing by unguessable link without an account so participants can see quiz media; do not upload confidential content.
+PostgreSQL tables are in `quizzes_private`, not the public API schema. Do not expose that schema in Supabase. A dedicated private media bucket is created/checked at startup. Media access requires the owning host session or a short-lived signed grant provided for live/published quiz participation. Media responses use private, no-store caching. A participant can still save/share content already shown to them; do not publish confidential content. Reconnect/refresh renews grants, and a failed custom soundtrack retries a fresh grant with default-music fallback.
 
 ## Backups, restore and recovery
 
@@ -80,7 +95,7 @@ npm run restore -- /private/path/extracted-backup
 npm run reset-admin
 ```
 
-For restore, first extract a trusted ZIP and stop application writes. Target a fresh database/bucket with no accounts or reports; omit initial-admin bootstrap variables. Existing data is deliberately not overwritten. A backup contains historical password/recovery hashes and participant records, so it is sensitive and should not be committed to GitHub. Restoring it also restores that historical account state. Login sessions and live games are not included.
+For restore, first extract a trusted ZIP and stop application writes. Target a fresh database/bucket with no accounts or reports; omit initial-admin bootstrap variables. Existing data is deliberately not overwritten. A backup contains historical password/recovery hashes and participant records, so it is sensitive and should not be committed to GitHub. Restoring it also restores that historical account state. Login sessions and live games are not included. In-app v0.5 exports are single-workspace backups; use the privileged CLI for a whole-installation backup. Submitted self-paced attempts are included. Do not restore a workspace backup into an already populated multi-workspace installation. Legacy v1 backups are assigned to a single selected owner on restore.
 
 Pause editing/uploads while backing up for application-level consistency. Large collections should use the CLI rather than a browser Blob download. Keep backups off-site and rehearse restoration. Automated backup scheduling is not configured; providers' free quotas also limit backup storage/bandwidth.
 
@@ -92,7 +107,7 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
-The suite starts isolated servers and temporary local databases. Integration tests use port 4181; production-bootstrap checks use 4183; Chromium uses 4182. `unzip` is used to verify test archives.
+The suite starts isolated servers and temporary local databases. Integration tests use port 4181; production-bootstrap checks use 4183; Chromium uses 4182; workspace tests use 4187. `unzip` is used to verify test archives.
 
 Validated locally:
 
@@ -103,7 +118,11 @@ Validated locally:
 - Saved accounts/quizzes/media/reports across an application restart.
 - Recovery-code rotation, concurrent reuse rejection, password reset and old-session revocation.
 - Backup ZIP contents and successful restore into a fresh SQLite database, with overwrite attempts rejected.
-- A separate mobile-sized Chromium participant completes a multimedia quiz; host/player reload recovery, audio playback, CSV export, backup/recovery downloads and forgotten-password reset through the UI.
+- A separate mobile-sized Chromium participant completes a multimedia quiz; host/player reload recovery, broadcast audio controls and signed-track renewal, CSV export, backup/recovery downloads and forgotten-password reset through the UI.
+- Multi-answer editor/selection, bulk round assignment, next-round titles, auto/manual leaderboards, 24-hour publication/guest completion/close/results and friend signup/isolation through the UI.
+- DOCX/PDF bold, color/highlight, checkmark and inherited Word styles, including a short digit-only bold answer; explicit multiple answer keys and ambiguous all-bold options.
+- Private workspace API/socket/media/backup boundaries, invitation expiry/replay, duplicate submission races, saved async progress across restart, deadline enforcement and post-close disclosure.
+- Legacy ownership migration fails closed on ambiguous multi-host databases; original quiz content is preserved and v1 backups restore into an owned workspace.
 
 The integration suite was also run against a real **local PostgreSQL 17** server and a **local Supabase Storage HTTP contract fixture**. This verifies the PostgreSQL adapter and storage request flow, not the actual hosted services. Hosted Supabase TLS, Render deployment, real-network capacity and other browser engines remain to be tested after account setup.
 
@@ -114,7 +133,7 @@ TEST_DATABASE_URL=postgresql://user@127.0.0.1:55432/quizzes_test \
 TEST_REMOTE_MEDIA=true npm test
 ```
 
-Tests use only `TEST_DATABASE_URL`, not your production `DATABASE_URL`. The test-only TLS bypass applies only with `NODE_ENV=test`; never use it for a hosted deployment. Recreate the test database before rerunning.
+Tests use only `TEST_DATABASE_URL`, not your production `DATABASE_URL`. The test-only TLS bypass applies only with `NODE_ENV=test`; never use it for a hosted deployment. Recreate the test database before rerunning. To test the new workspace flows against PostgreSQL too, provide a **different** fresh database via `WORKSPACE_TEST_DATABASE_URL=postgresql://user@127.0.0.1:55432/quizzes_test_workspaces`. Never use a real deployment database for tests.
 
 ## Operational boundaries
 
@@ -123,6 +142,10 @@ Tests use only `TEST_DATABASE_URL`, not your production `DATABASE_URL`. The test
 - Disconnecting a participant does not free their nickname/player slot during the game; in-tab reconnect restores their score.
 - Login/upload/message limits and basic media signature validation are implemented, not a complete security audit or antivirus scan.
 - Removed attachments remain stored until manually cleaned up. There are no automated retention/deletion tools yet.
-- No email-based reset, host invitations/permission levels, synchronized media, dedicated event-sound configuration, native mobile apps, full accessibility audit or managed monitoring/backup scheduling yet.
+- No email-based reset, differentiated roles within a workspace, sample-synchronized media, dedicated event-sound configuration, native mobile apps, full accessibility audit or managed monitoring/backup scheduling yet.
+- Browser-level attempt prevention can be bypassed by clearing cookies, private browsing or another browser/device. This is not identity verification or a proctored-exam system.
+- Self-paced windows close 24 hours after publication, not 24 hours after joining. Only submitted answers persist. Partial attempts count in final results. Free-hosting downtime does not extend deadlines.
+- Private workspaces share free-tier quotas; inviting a friend does not create an additional free server/database allocation.
+- Never roll back to v0.4 or earlier against a database containing private friend workspaces: those versions do not enforce isolation. See the update guide before any rollback.
 
 The Docker/Compose alternative is retained for a server with a persistent local volume, but has not been built or deployed here. It is not the selected free Render/Supabase route.

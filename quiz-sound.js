@@ -12,26 +12,12 @@ window.QuizzesSound = (() => {
     ducked = false,
     lastTick = null,
     finishTimer;
-  const key =
-    location.pathname === "/join"
-      ? "quizzes-player-audio"
-      : "quizzes-host-audio";
-  let volume = location.pathname === "/join" ? 0.18 : 0.3,
-    muted = false;
-  try {
-    const saved = JSON.parse(localStorage.getItem(key));
-    if (saved) {
-      volume = Math.max(0, Math.min(1, Number(saved.volume) || 0));
-      muted = !!saved.muted;
-    }
-  } catch {}
+  const isHost = location.pathname !== "/join";
+  let volume = 0.3,
+    muted = false,
+    onHostChange = () => {};
   const active = () =>
     ["lobby", "question", "results", "ended"].includes(phase);
-  function persist() {
-    try {
-      localStorage.setItem(key, JSON.stringify({ volume, muted }));
-    } catch {}
-  }
   function update() {
     if (master)
       master.gain.setTargetAtTime(
@@ -45,21 +31,25 @@ window.QuizzesSound = (() => {
     }
     document.querySelectorAll("[data-sound-controls]").forEach((root) => {
       const toggle = root.querySelector(".sound-toggle");
-      toggle.textContent =
-        !ctx || ctx.state !== "running" || (track?.paused && active() && !muted)
-          ? "Enable sound"
-          : muted
-            ? "Unmute sound"
-            : "Mute sound";
+      const blocked =
+        !ctx ||
+        ctx.state !== "running" ||
+        (track?.paused && active() && !muted);
+      toggle.textContent = blocked
+        ? "Enable sound"
+        : muted
+          ? "Play music for everyone"
+          : "Pause music for everyone";
+      toggle.hidden = !isHost && !blocked;
       toggle.setAttribute("aria-pressed", String(muted));
+      root.querySelector(".sound-volume").hidden = !isHost;
+      root.querySelector("input").disabled = !isHost;
       root.querySelector("input").value = Math.round(volume * 100);
       root.querySelector(".sound-state").textContent = muted
-        ? "Muted on this device"
-        : !ctx || ctx.state !== "running"
-          ? "Tap to enable on this device"
-          : track
-            ? "Custom soundtrack"
-            : "Original Quizzes soundtrack";
+        ? "Music paused by host"
+        : isHost
+          ? "Host controls all devices"
+          : "Music controlled by your host";
     });
   }
   function tone(freq, t, duration, gain = 0.1, type = "sine", endFreq) {
@@ -104,7 +94,7 @@ window.QuizzesSound = (() => {
     };
   }
   function schedule() {
-    if (!ctx || ctx.state !== "running" || !active() || track) return;
+    if (!ctx || ctx.state !== "running" || !active() || muted || track) return;
     if (next < ctx.currentTime - 0.2) next = ctx.currentTime;
     const duration = 60 / (phase === "question" ? 128 : 112) / 2;
     while (next < ctx.currentTime + 0.15) {
@@ -146,7 +136,7 @@ window.QuizzesSound = (() => {
       await ctx.resume();
       update();
       if (!timer) timer = setInterval(schedule, 90);
-      if (track && active())
+      if (track && active() && !muted)
         try {
           await track.play();
         } catch {} // UI offers a deliberate Enable sound action.
@@ -166,9 +156,11 @@ window.QuizzesSound = (() => {
         if (track === element) {
           track = null;
           update();
+          window.dispatchEvent(new Event("quiz:refresh-music"));
         }
       });
-      if (ctx?.state === "running" && active()) track.play().catch(update);
+      if (ctx?.state === "running" && active() && !muted)
+        track.play().catch(update);
     }
     update();
   }
@@ -199,7 +191,7 @@ window.QuizzesSound = (() => {
       timer = null;
     } else if (ctx?.state === "running") {
       if (!timer) timer = setInterval(schedule, 90);
-      if (track) track.play().catch(update);
+      if (track && !muted) track.play().catch(update);
     }
     if (value === "results") effect("reveal");
     if (value === "ended") {
@@ -229,16 +221,16 @@ window.QuizzesSound = (() => {
         (track?.paused && active() && !muted)
       ) {
         await enable();
-      } else {
-        muted = !muted;
-        persist();
-        update();
+      } else if (isHost) {
+        onHostChange({ playing: muted, volume });
       }
     };
-    root.querySelector("input").oninput = (event) => {
-      volume = Number(event.target.value) / 100;
-      persist();
-      update();
+    root.querySelector("input").onchange = (event) => {
+      if (isHost)
+        onHostChange({
+          playing: !muted,
+          volume: Number(event.target.value) / 100,
+        });
     };
   });
   // Make spoken/audio questions intelligible without stopping the soundtrack.
@@ -266,6 +258,20 @@ window.QuizzesSound = (() => {
   update();
   return {
     enable,
+    configure: (callback) => {
+      onHostChange = callback;
+    },
+    setRemote: (state) => {
+      if (!state) return;
+      muted = !state.playing;
+      volume = state.volume;
+      if (track) {
+        if (muted) track.pause();
+        else if (active() && ctx?.state === "running")
+          track.play().catch(update);
+      }
+      update();
+    },
     setTrack,
     setPhase,
     remaining,

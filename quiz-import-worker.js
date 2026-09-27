@@ -43,7 +43,7 @@ async function extract() {
   }
   if (workerData.extension === "docx") {
     await checkDocx();
-    return (await require("mammoth").extractRawText({ buffer: b })).value;
+    return await require("./document-format").docxText(b);
   }
   if (b.subarray(0, 5).toString() !== "%PDF-")
     invalid(
@@ -57,6 +57,7 @@ async function extract() {
     useWorkerFetch: false,
     disableFontFace: true,
     verbosity: 0,
+    fontExtraProperties: true,
   });
   let doc;
   try {
@@ -66,18 +67,10 @@ async function extract() {
     let text = "";
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
-      const content = await page.getTextContent();
-      let y = null;
-      for (const item of content.items) {
-        if (typeof item.str !== "string") continue;
-        const nextY = item.transform?.[5];
-        if (y !== null && Math.abs(nextY - y) > 3) text += "\n";
-        text += item.str + (item.hasEOL ? "\n" : " ");
-        y = nextY;
-        if (text.length > MAX_TEXT)
-          invalid("Too much text. Split this document into smaller quizzes.");
-      }
-      text += "\n";
+      text +=
+        (await require("./document-format").pdfPageText(page, pdfjs)) + "\n";
+      if (text.length > MAX_TEXT)
+        invalid("Too much text. Split this document into smaller quizzes.");
       page.cleanup();
     }
     if (!text.trim())
@@ -93,7 +86,9 @@ async function extract() {
 (async () => {
   try {
     const text = await extract();
-    parentPort.postMessage({ result: parseQuizText(text, workerData.title) });
+    parentPort.postMessage({
+      result: parseQuizText(text, workerData.title, workerData.styleMode),
+    });
   } catch (error) {
     parentPort.postMessage({
       error:

@@ -1,0 +1,36 @@
+# Free testing deployment only. No disk or paid Render database is created.
+services:
+  - type: web
+    name: quizzes
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: ALLOW_SETUP
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_MEDIA_BUCKET
+        value: quizzes-media
+      - key: ORGANIZATION_NAME
+        sync: false
+      - key: INITIAL_ADMIN_EMAIL
+        sync: false
+      - key: INITIAL_ADMIN_PASSWORD
+        sync: false
+# If certificate validation needs your Supabase CA, set DATABASE_CA_CERT manually
+# in the dashboard to the full PEM certificate. Never disable TLS verification.

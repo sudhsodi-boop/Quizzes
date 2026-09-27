@@ -1,0 +1,14 @@
+services:
+  quizzes:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4173:4173"
+    volumes:
+      - quizzes-data:/app/data
+    environment:
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+    stop_grace_period: 20s
+volumes:
+  quizzes-data:

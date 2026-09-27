@@ -1,0 +1,54 @@
+{
+  "id": "a52733b6-4589-4d0d-8acb-247a9a10cf70",
+  "title": "Community connections",
+  "description": "A short sample quiz to try with your team.",
+  "music": "",
+  "rounds": [
+    {
+      "title": "Getting together",
+      "questions": [
+        {
+          "type": "choice",
+          "text": "Which action helps a new volunteer feel welcome?",
+          "options": [
+            "Introduce yourself",
+            "Ignore them",
+            "Skip introductions",
+            "Leave early"
+          ],
+          "correct": 0,
+          "seconds": 20,
+          "points": 1000,
+          "media": ""
+        },
+        {
+          "type": "boolean",
+          "text": "Small acts of kindness can make a difference.",
+          "options": [
+            "True",
+            "False"
+          ],
+          "correct": 0,
+          "seconds": 15,
+          "points": 1000,
+          "media": ""
+        }
+      ]
+    },
+    {
+      "title": "Better together",
+      "questions": [
+        {
+          "type": "text",
+          "text": "Complete the phrase: Together we are ____.",
+          "accepted": [
+            "stronger"
+          ],
+          "seconds": 25,
+          "points": 1500,
+          "media": ""
+        }
+      ]
+    }
+  ]
+}

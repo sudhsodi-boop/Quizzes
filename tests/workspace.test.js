@@ -562,7 +562,7 @@ test(
                 encoding: "utf8",
               }),
             );
-            assert.equal(saved.version, 2);
+            assert.equal(saved.version, 3);
             assert.equal(saved.tables.admins.length, 1);
             assert.equal(saved.tables.publications.length, expected);
             assert.equal(saved.tables.attempts.length, expected);

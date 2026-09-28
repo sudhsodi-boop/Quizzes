@@ -1496,6 +1496,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await joinPreview.close();
   await asyncContext.close();
   await friendContext.close();
+  await require("./professional-browser")({ page, browser, errors });
   expect(errors).toEqual([]);
   await context.close();
 });

@@ -1160,6 +1160,366 @@ test(
           );
         },
       );
+      await t.test(
+        "assignment deadlines, stable shuffled grading and server-enforced timers",
+        async () => {
+          const baseQuestion = { seconds: 120, points: 1000, media: "" };
+          const created = (
+            await req(
+              "/api/quizzes",
+              "POST",
+              {
+                title: "Assignment settings",
+                description: "",
+                music: "",
+                rounds: [
+                  {
+                    title: "",
+                    questions: [
+                      {
+                        ...baseQuestion,
+                        type: "choice",
+                        text: "Choose B",
+                        options: ["A", "B", "C", "D"],
+                        correct: 1,
+                      },
+                      {
+                        ...baseQuestion,
+                        type: "multi",
+                        text: "Choose prime numbers",
+                        options: ["2", "4", "3", "6"],
+                        correctAnswers: [0, 2],
+                      },
+                      {
+                        ...baseQuestion,
+                        type: "text",
+                        text: "Type hello",
+                        accepted: ["hello"],
+                      },
+                      {
+                        ...baseQuestion,
+                        type: "boolean",
+                        text: "True or false",
+                        correct: 1,
+                      },
+                    ],
+                  },
+                ],
+              },
+              owner,
+            )
+          ).value;
+          for (const options of [
+            { closes: Date.now() - 1 },
+            { closes: Date.now() + 366 * 86400000 },
+            { timerEnabled: "true" },
+            { randomizeAnswers: 1 },
+          ]) {
+            assert.equal(
+              (
+                await req(
+                  "/api/publications",
+                  "POST",
+                  { quizId: created.id, ...options },
+                  owner,
+                )
+              ).res.status,
+              400,
+            );
+          }
+          const closes = Date.now() + 2 * 86400000;
+          const shuffled = (
+            await req(
+              "/api/publications",
+              "POST",
+              { quizId: created.id, closes, randomizeAnswers: true },
+              owner,
+            )
+          ).value;
+          const endpoint = "/api/published/" + shuffled.id;
+          const cookie = (await req(endpoint)).cookie;
+          let state = (
+            await req(
+              endpoint + "/join",
+              "POST",
+              { name: "Shuffled participant" },
+              cookie,
+            )
+          ).value;
+          assert.equal(state.closes, closes);
+          assert.deepEqual(state.settings, {
+            timerEnabled: false,
+            randomizeAnswers: true,
+          });
+          assert.equal(state.question.deadline, null);
+          assert.equal(JSON.stringify(state).includes("shuffleSeed"), false);
+          const order = state.question.options;
+          assert.deepEqual([...order].sort(), ["A", "B", "C", "D"]);
+          await stop();
+          await start();
+          assert.deepEqual(
+            (await req(endpoint, "GET", undefined, cookie)).value.question
+              .options,
+            order,
+          );
+          state = (
+            await req(
+              endpoint + "/answer",
+              "POST",
+              { index: 0, answer: order.indexOf("B") },
+              cookie,
+            )
+          ).value;
+          assert.equal(state.attempt.score, 1000);
+          assert.equal(state.solutions[0].yourAnswer, 1);
+          assert.equal(state.solutions[0].correct, "B");
+          const multiOrder = state.question.options;
+          assert.equal(
+            (
+              await req(
+                endpoint + "/answer",
+                "POST",
+                { index: 1, answer: [0, 0] },
+                cookie,
+              )
+            ).res.status,
+            400,
+          );
+          assert.equal(
+            (
+              await req(
+                endpoint + "/answer",
+                "POST",
+                { index: 1, answer: [999] },
+                cookie,
+              )
+            ).res.status,
+            400,
+          );
+          state = (
+            await req(
+              endpoint + "/answer",
+              "POST",
+              {
+                index: 1,
+                answer: [
+                  multiOrder.indexOf("2"),
+                  multiOrder.indexOf("3"),
+                  multiOrder.indexOf("4"),
+                ],
+              },
+              cookie,
+            )
+          ).value;
+          assert.equal(state.solutions[1].credit, 0.5);
+          assert.equal(state.attempt.score, 1500);
+          state = (
+            await req(
+              endpoint + "/answer",
+              "POST",
+              { index: 2, answer: " HELLO " },
+              cookie,
+            )
+          ).value;
+          state = (
+            await req(
+              endpoint + "/answer",
+              "POST",
+              { index: 3, answer: state.question.options.indexOf("False") },
+              cookie,
+            )
+          ).value;
+          assert.equal(state.attempt.score, 3500);
+          assert.equal(state.attempt.completed, true);
+          assert.equal(state.leaderboard[0].score, 3500);
+          // Timers are persisted in each attempt, not in a process-local timeout.
+          const timed = (
+            await req(
+              "/api/publications",
+              "POST",
+              {
+                quizId: created.id,
+                timerEnabled: true,
+                randomizeAnswers: true,
+              },
+              owner,
+            )
+          ).value;
+          const timedPath = "/api/published/" + timed.id;
+          const timedCookie = (await req(timedPath)).cookie;
+          state = (
+            await req(
+              timedPath + "/join",
+              "POST",
+              { name: "Timed participant" },
+              timedCookie,
+            )
+          ).value;
+          const firstDeadline = state.question.deadline;
+          assert.ok(firstDeadline > Date.now());
+          assert.equal(
+            (
+              await req(
+                timedPath + "/join",
+                "POST",
+                { name: "Again" },
+                timedCookie,
+              )
+            ).value.question.deadline,
+            firstDeadline,
+          );
+          async function expire() {
+            if (database) {
+              const client = new (require("pg").Client)({
+                connectionString: database,
+              });
+              await client.connect();
+              try {
+                const row = (
+                  await client.query(
+                    "SELECT id,document FROM quizzes_private.attempts WHERE publication_id=$1",
+                    [timed.id],
+                  )
+                ).rows[0];
+                const d = JSON.parse(row.document);
+                d.deadline = Date.now() - 1;
+                await client.query(
+                  "UPDATE quizzes_private.attempts SET document=$1 WHERE id=$2",
+                  [JSON.stringify(d), row.id],
+                );
+              } finally {
+                await client.end();
+              }
+            } else {
+              const local = new (require("better-sqlite3"))(
+                path.join(dir, "quizzes.sqlite"),
+              );
+              try {
+                const row = local
+                  .prepare(
+                    "SELECT id,document FROM attempts WHERE publication_id=?",
+                  )
+                  .get(timed.id);
+                const d = JSON.parse(row.document);
+                d.deadline = Date.now() - 1;
+                local
+                  .prepare("UPDATE attempts SET document=? WHERE id=?")
+                  .run(JSON.stringify(d), row.id);
+              } finally {
+                local.close();
+              }
+            }
+          }
+          await expire();
+          state = (
+            await req(
+              timedPath + "/answer",
+              "POST",
+              { index: 0, answer: state.question.options.indexOf("B") },
+              timedCookie,
+            )
+          ).value;
+          assert.equal(state.solutions[0].timedOut, true);
+          assert.equal(state.attempt.score, 0);
+          assert.equal(state.awaitingNext, true);
+          assert.equal(state.question, undefined);
+          assert.equal(
+            (
+              await req(
+                timedPath + "/answer",
+                "POST",
+                { index: 1, answer: [0] },
+                timedCookie,
+              )
+            ).res.status,
+            409,
+          );
+          assert.equal(
+            (await req(timedPath, "GET", undefined, timedCookie)).value
+              .awaitingNext,
+            true,
+          );
+          const starts = await Promise.all([
+            req(timedPath + "/next", "POST", { index: 1 }, timedCookie),
+            req(timedPath + "/next", "POST", { index: 1 }, timedCookie),
+          ]);
+          assert.ok(starts.every((r) => r.res.status === 200));
+          assert.equal(
+            starts[0].value.question.deadline,
+            starts[1].value.question.deadline,
+          );
+          await expire();
+          state = (await req(timedPath, "GET", undefined, timedCookie)).value;
+          assert.equal(state.attempt.cursor, 2);
+          assert.equal(state.solutions[1].timedOut, true);
+          assert.equal(
+            (await req(timedPath, "GET", undefined, timedCookie)).value.attempt
+              .cursor,
+            2,
+          );
+          assert.equal(
+            (await req(timedPath + "/next", "POST", { index: 1 }, timedCookie))
+              .res.status,
+            409,
+          );
+          state = (
+            await req(timedPath + "/next", "POST", { index: 2 }, timedCookie)
+          ).value;
+          const preservedDeadline = state.question.deadline;
+          await stop();
+          await start();
+          assert.equal(
+            (await req(timedPath, "GET", undefined, timedCookie)).value.question
+              .deadline,
+            preservedDeadline,
+          );
+          await req(
+            timedPath + "/answer",
+            "POST",
+            { index: 2, answer: "hello" },
+            timedCookie,
+          );
+          state = (
+            await req(timedPath + "/next", "POST", { index: 3 }, timedCookie)
+          ).value;
+          state = (
+            await req(
+              timedPath + "/answer",
+              "POST",
+              { index: 3, answer: state.question.options.indexOf("False") },
+              timedCookie,
+            )
+          ).value;
+          assert.equal(state.attempt.completed, true);
+          assert.equal(state.attempt.score, 2000);
+          assert.equal(state.awaitingNext, false);
+          assert.equal(state.leaderboard[0].score, 2000);
+          const backup = await req("/api/backup", "POST", { password }, owner);
+          assert.equal(backup.res.status, 200);
+          const backupFile = path.join(dir, "timed-assignment-backup.zip");
+          fs.writeFileSync(backupFile, backup.value);
+          const saved = JSON.parse(
+            execFileSync("unzip", ["-p", backupFile, "database.json"], {
+              encoding: "utf8",
+            }),
+          );
+          const savedPublication = saved.tables.publications.find(
+            (p) => p.id === timed.id,
+          );
+          assert.equal(
+            JSON.parse(savedPublication.document).publicationSettings
+              .timerEnabled,
+            true,
+          );
+          const savedAttempt = JSON.parse(
+            saved.tables.attempts.find((a) => a.publication_id === timed.id)
+              .document,
+          );
+          assert.equal(savedAttempt.answers[0].timedOut, true);
+          assert.equal(savedAttempt.shuffleSeed.length, 32);
+          assert.equal(savedAttempt.score, 2000);
+        },
+      );
     } finally {
       for (const ws of sockets) ws.terminate();
       await stop();

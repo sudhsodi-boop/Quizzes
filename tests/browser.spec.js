@@ -31,6 +31,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .first()
     .locator('[data-field="text"]')
     .fill("Which option is correct?");
+  await page
+    .locator(".studio-key")
+    .first()
+    .evaluate((el) => (el.open = true));
   await cards
     .first()
     .locator('[data-field="options"]')
@@ -207,6 +211,33 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(
     page.getByRole("button", { name: "Results saved" }),
   ).toBeDisabled();
+  await expect(page.locator("#hostQuestion")).toHaveText("Final leaderboard");
+  await expect(page.locator("#hostResults .podium")).toBeVisible();
+  await expect(page.locator("#hostResults .leaderboard")).toContainText(
+    "Mobile player",
+  );
+  expect(await page.locator("#hostResults .leaderboard").textContent()).toBe(
+    await player.locator("#playerResults .leaderboard").textContent(),
+  );
+  await expect(page.locator("#toggleLeaderboard")).toBeDisabled();
+  expect(
+    await page
+      .locator("#hostResults .leaderboard li")
+      .first()
+      .evaluate(
+        (el) =>
+          el.getBoundingClientRect().bottom <=
+          document
+            .querySelector("#gameModal .stage-question")
+            .getBoundingClientRect().bottom +
+            2,
+      ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-artifacts/host-final-leaderboard.png",
+    fullPage: false,
+    animations: "disabled",
+  });
   await page.locator("#closeGame").click();
   await page.locator('.nav-item[data-view="reports"]').click();
   await page.locator(".report-detail summary").click();
@@ -333,6 +364,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(
     page.locator('[data-field="correctChoice"]').first(),
   ).toHaveValue("");
+  await page
+    .locator(".studio-key")
+    .first()
+    .evaluate((el) => (el.open = true));
   await page.locator('[data-field="correctChoice"]').first().fill("2");
   await page.getByRole("button", { name: "Save quiz", exact: true }).click();
   await expect(page.locator("#editor")).toBeVisible(); // Explicit review acknowledgement required.
@@ -455,6 +490,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .filter({ hasText: "Community Game Night" })
     .getByRole("button", { name: "Edit", exact: true })
     .click();
+  await page.locator("#quizSettings").evaluate((el) => (el.open = true));
   await page.locator("#quizTitle").fill("Round tools and 24h");
   await page.locator(".round-title").first().fill("Easy");
   await page
@@ -468,6 +504,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .locator('[data-field="type"]')
     .selectOption("multi");
   await page
+    .locator(".studio-key")
+    .first()
+    .evaluate((el) => (el.open = true));
+  await page
     .locator(".question-card")
     .first()
     .locator('[data-field="options"]')
@@ -477,6 +517,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .first()
     .locator('[data-field="options"]')
     .blur();
+  await page
+    .locator(".studio-key")
+    .first()
+    .evaluate((el) => (el.open = true));
   for (const checkbox of await page
     .locator(".question-card")
     .first()
@@ -493,11 +537,8 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .first()
     .locator('[data-correct-index="2"]')
     .check();
-  await page
-    .locator(".question-card")
-    .nth(1)
-    .locator(".question-select")
-    .check();
+  await page.locator('[data-studio-select="0:1"]').check();
+  await page.locator(".studio-organize").evaluate((el) => (el.open = true));
   await page.locator("#bulkRound").selectOption("new");
   await page.locator("#moveSelected").click();
   await expect(page.locator(".round-section")).toHaveCount(2);
@@ -518,7 +559,17 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .locator(".library-card")
     .filter({ hasText: "Round tools and 24h" });
   await expect(newCard).toContainText("2 rounds · 2 questions");
-  await newCard.getByRole("button", { name: "Publish 24h" }).click();
+  await newCard
+    .getByRole("button", { name: "Assign quiz", exact: true })
+    .click();
+  await expect(page.locator("#assignDialog")).toBeVisible();
+  await page.screenshot({
+    path: "test-artifacts/v08-assignment-settings.png",
+    animations: "disabled",
+  });
+  await page
+    .getByRole("button", { name: "Create assignment", exact: true })
+    .click();
   const publication = page
     .locator(".publication-card")
     .filter({ hasText: "Round tools and 24h" });
@@ -669,8 +720,18 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(player.locator("#playerOptions")).toBeHidden();
   await expect(player.locator("#playerTitle")).toBeHidden();
   await expect(player.locator("#answerStatus")).toBeHidden();
-  await expect(page.locator("#hostLeaderboard")).toBeHidden();
-  await expect(page.locator("#hostQuestion")).toBeVisible();
+  await expect(page.locator("#hostLeaderboard")).toBeVisible();
+  await expect(page.locator("#hostQuestion")).toBeHidden();
+  await expect(page.locator("#hostOptions")).toBeHidden();
+  await expect(page.locator("#hostLeaderboard")).toContainText("Round fan");
+  await expect(page.locator("#playerCount")).toBeVisible();
+  await expect(page.locator("#answeredCount")).toBeVisible();
+  expect(
+    await page.locator("#hostLeaderboard .leaderboard").textContent(),
+  ).toBe(await player.locator("#playerLeaderboard .leaderboard").textContent());
+  await page.reload();
+  await expect(page.locator("#hostLeaderboard")).toBeVisible();
+  await expect(page.locator("#hostQuestion")).toBeHidden();
   await player.screenshot({
     path: "test-artifacts/v07-live-leaderboard-mobile.png",
     fullPage: true,
@@ -680,6 +741,8 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(player.locator("#playerTitle")).toBeHidden();
   await page.locator("#toggleLeaderboard").click();
   await expect(player.locator("#playerLeaderboard")).toBeHidden();
+  await expect(page.locator("#hostLeaderboard")).toBeHidden();
+  await expect(page.locator("#hostQuestion")).toBeVisible();
   await expect(player.locator("#playerOptions")).toBeVisible();
   await player.locator("#playerOptions button").nth(0).click();
   await player.locator("#playerOptions button").nth(2).click();
@@ -688,7 +751,18 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await page.getByRole("button", { name: "Reveal answers" }).click();
   await expect(player.locator("#playerLeaderboard")).toBeVisible();
   await expect(player.locator("#playerOptions .is-correct")).toHaveCount(2);
+  await expect(page.locator("#hostLeaderboard")).toBeVisible();
+  expect(
+    await page.locator("#hostLeaderboard .leaderboard").textContent(),
+  ).toBe(await player.locator("#playerLeaderboard .leaderboard").textContent());
+  await page.screenshot({
+    path: "test-artifacts/host-shared-leaderboard.png",
+    fullPage: false,
+    animations: "disabled",
+  });
   await page.getByRole("button", { name: "Next round" }).click();
+  await expect(page.locator("#hostLeaderboard")).toBeHidden();
+  await expect(page.locator("#hostQuestion")).toHaveText("Round 2: Challenge");
   await expect(player.locator("#playerTitle")).toHaveText("Round 2: Challenge");
   await page.screenshot({
     path: "test-artifacts/v05-round-transition.png",
@@ -841,6 +915,12 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .click();
   await expect(page.locator("#hostCode")).toHaveText(/^QZ[A-F0-9]{6}$/);
   const layoutCode = await page.locator("#hostCode").textContent();
+  await expect(page.locator("#toggleLeaderboard")).toBeEnabled();
+  await page.locator("#toggleLeaderboard").click();
+  await expect(page.locator("#hostLeaderboard")).toContainText(
+    "No participants in this session.",
+  );
+  await page.locator("#toggleLeaderboard").click();
   await player.goto("/join?code=" + layoutCode);
   await player.getByLabel("Your nickname").fill("Layout player");
   await player.getByRole("button", { name: "Join game" }).click();
@@ -908,8 +988,12 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(player.locator("#playerLeaderboard")).toBeVisible();
   await expect(player.locator("#playerMedia")).toBeHidden();
   await expect(player.locator("#submitMulti")).toBeHidden();
-  await expect(page.locator("#hostMedia")).toBeVisible();
+  await expect(page.locator("#hostMedia")).toBeHidden();
+  await expect(page.locator("#hostLeaderboard")).toBeVisible();
+  await expect(page.locator("#nextQuestion")).toBeVisible();
+  await page.locator("#toggleLeaderboard").click();
   await expect(page.locator("#hostLeaderboard")).toBeHidden();
+  await expect(page.locator("#hostMedia")).toBeVisible();
   // Long content and browser zoom preserve access instead of clipping text.
   await page.evaluate(() => {
     document.querySelector("#hostQuestion").textContent =
@@ -938,7 +1022,228 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   ).toBe("auto");
   await page.locator("#endGame").click();
   await expect(page.locator("#nextQuestion")).toBeDisabled();
-  await expect(page.locator("#hostResults .leaderboard")).toHaveCount(0);
+  await expect(page.locator("#hostResults .leaderboard")).toHaveCount(1);
+  // v0.8: visual authoring controls and a real timed/shuffled publication.
+  await page.locator("#closeGame").click();
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.evaluate(async () => {
+    const saved = await fetch("/api/quizzes").then((r) => r.json());
+    const media = saved.find((q) => q.title === "Community challenge").rounds[0]
+      .questions[0].media;
+    const response = await fetch("/api/quizzes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Studio assignment check",
+        description: "A Gujarati studio example",
+        music: "",
+        rounds: [
+          {
+            title: "Discovery",
+            questions: [
+              {
+                type: "choice",
+                text: "આમાંથી કઈ સંખ્યા અવિભાજ્ય છે?",
+                options: ["ચાર", "પાંચ", "છ", "આઠ"],
+                correct: 1,
+                seconds: 120,
+                points: 1000,
+                media,
+              },
+              {
+                type: "choice",
+                text: "Choose the color of the sky.",
+                options: ["Blue", "Green", "Red", "Yellow"],
+                correct: 0,
+                seconds: 5,
+                points: 1000,
+                media: "",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!response.ok) throw Error("Studio fixture failed");
+  });
+  await page.reload();
+  await page.locator('.nav-item[data-view="quizzes"]').click();
+  const studioCard = page
+    .locator(".library-card")
+    .filter({ hasText: "Studio assignment check" });
+  await studioCard.getByRole("button", { name: "Edit", exact: true }).click();
+  await expect(page.locator("#quizSettings")).not.toHaveAttribute("open", "");
+  await page.locator("#openQuizSettings").click();
+  await expect(page.locator("#quizTitle")).toBeVisible();
+  await page.locator("#openQuizSettings").click();
+  await expect(page.locator("#quizTitle")).toBeHidden();
+  await expect(
+    page.locator(".question-card:visible .studio-properties"),
+  ).toBeVisible();
+  await expect(page.locator("[data-studio-question]")).toHaveCount(2);
+  await page
+    .locator('.question-card:visible [data-studio-option="0"]')
+    .fill("ચાર (4)");
+  await page
+    .getByRole("button", { name: "＋ Add answer", exact: true })
+    .click();
+  await page
+    .locator('.question-card:visible [data-studio-option="4"]')
+    .fill("નવ");
+  await page
+    .getByRole("button", { name: "Mark answer 5 correct", exact: true })
+    .click();
+  await expect(
+    page.locator('.question-card:visible [data-field="correctChoice"]'),
+  ).toHaveValue("5");
+  await page
+    .getByRole("button", { name: "Remove answer 5", exact: true })
+    .click();
+  await expect(
+    page.locator('.question-card:visible [data-field="correctChoice"]'),
+  ).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Mark answer 2 correct", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Duplicate question", exact: true })
+    .click();
+  await expect(page.locator("[data-studio-question]")).toHaveCount(3);
+  await page
+    .locator('.question-card:visible [data-field="text"]')
+    .fill("Duplicate check");
+  await page.locator('.question-card:visible [data-move="-1"]').click();
+  await expect(page.locator('[data-studio-question="0:0"]')).toHaveAttribute(
+    "aria-current",
+    "true",
+  );
+  await page.locator(".question-card:visible [data-remove-question]").click();
+  await expect(page.locator("[data-studio-question]")).toHaveCount(2);
+  await page.locator('[data-studio-question="0:1"]').click();
+  await page.locator('[data-studio-question="0:0"]').click();
+  await expect(
+    page.locator('.question-card:visible [data-studio-option="0"]'),
+  ).toHaveValue("ચાર (4)");
+  await expect(
+    page.locator('.question-card:visible [data-field="correctChoice"]'),
+  ).toHaveValue("2");
+  expect(
+    await page.evaluate(
+      async () =>
+        (await document.fonts.load('20px "Quizzes Gujarati"', "અવિભાજ્ય"))
+          .length,
+    ),
+  ).toBe(1);
+  await page.screenshot({
+    path: "test-artifacts/v08-studio-desktop.png",
+    animations: "disabled",
+    fullPage: false,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "test-artifacts/v08-studio-mobile.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.getByRole("button", { name: "Save quiz", exact: true }).click();
+  await expect(studioCard).toBeVisible();
+  await studioCard
+    .getByRole("button", { name: "Assign quiz", exact: true })
+    .click();
+  await page.locator("#assignTimer").check();
+  await page.locator("#assignShuffle").check();
+  const closeDate = new Date(Date.now() + 2 * 86400000);
+  await page
+    .locator("#assignDeadline")
+    .fill(
+      new Date(closeDate.getTime() - closeDate.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16),
+    );
+  await page.screenshot({
+    path: "test-artifacts/v08-assignment-settings.png",
+    animations: "disabled",
+  });
+  await page
+    .getByRole("button", { name: "Create assignment", exact: true })
+    .click();
+  const timedPublication = page
+    .locator(".publication-card")
+    .filter({ hasText: "Studio assignment check" });
+  await expect(timedPublication).toContainText("Timed · Shuffled answers");
+  const timedURL = await timedPublication.locator("input").inputValue();
+  const timedCtx = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+  });
+  const timedPlayer = await timedCtx.newPage();
+  timedPlayer.on("pageerror", (err) => errors.push(err.message));
+  await timedPlayer.goto(timedURL);
+  await timedPlayer
+    .locator("#publishedJoin")
+    .getByLabel("Your nickname")
+    .fill("Timed learner");
+  await timedPlayer.getByRole("button", { name: "Start my attempt" }).click();
+  await expect(timedPlayer.locator("#asyncTimer")).toBeVisible();
+  const optionOrder = await timedPlayer
+    .locator(".async-options label span")
+    .allTextContents();
+  await timedPlayer.reload();
+  await expect(timedPlayer.locator(".async-options label span")).toHaveText(
+    optionOrder,
+  );
+  await timedPlayer.getByLabel("પાંચ", { exact: true }).check();
+  await timedPlayer
+    .getByRole("button", { name: "Submit answer", exact: true })
+    .click();
+  await expect(timedPlayer.locator("#feedbackHeading")).toHaveText("Correct!");
+  await expect(timedPlayer.locator("#asyncTimer")).toHaveCount(0);
+  const publicPath = new URL(timedURL).searchParams.get("quiz");
+  const paused = await timedPlayer.evaluate(
+    (id) => fetch("/api/published/" + id).then((r) => r.json()),
+    publicPath,
+  );
+  expect(paused.awaitingNext).toBe(true);
+  expect(paused.question).toBeUndefined();
+  await timedPlayer.reload();
+  await expect(timedPlayer.locator("#feedbackHeading")).toHaveText("Correct!");
+  await timedPlayer.getByRole("button", { name: "Next question" }).click();
+  await expect(timedPlayer.locator("#asyncTimer")).toBeVisible();
+  await timedPlayer.reload();
+  await expect(timedPlayer.locator("#feedbackHeading")).toHaveText(
+    "Time’s up",
+    { timeout: 10000 },
+  );
+  await expect(timedPlayer.locator(".answer-feedback")).toContainText(
+    "Correct answer: Blue",
+  );
+  await timedPlayer.screenshot({
+    path: "test-artifacts/v08-timed-feedback.png",
+    animations: "disabled",
+    fullPage: true,
+  });
+  await timedPlayer
+    .getByRole("button", { name: "See my results & leaderboard" })
+    .click();
+  await expect(timedPlayer.locator(".final-score")).toContainText("1,000");
+  await expect(timedPlayer.locator(".completed-leaderboard")).toContainText(
+    "Timed learner",
+  );
+  await timedCtx.close();
+  const joinPreview = await browser.newPage({
+    viewport: { width: 1366, height: 768 },
+  });
+  await joinPreview.goto("/join");
+  await joinPreview.screenshot({
+    path: "test-artifacts/v08-join-screen.png",
+    animations: "disabled",
+  });
+  await joinPreview.close();
   await asyncContext.close();
   await friendContext.close();
   expect(errors).toEqual([]);

@@ -155,6 +155,14 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     "Which option is correct?",
   );
   await expect(player.locator("#playerMedia img")).toBeVisible();
+  await expect(player.locator("#playerMedia img")).toHaveAttribute(
+    "fetchpriority",
+    "high",
+  );
+  await expect(player.locator("#playerMedia img")).toHaveAttribute(
+    "loading",
+    "eager",
+  );
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(imageRequests.length).toBe(lobbyImageDownloads);
   await page.setViewportSize({ width: 1366, height: 768 });

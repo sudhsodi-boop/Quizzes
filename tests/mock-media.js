@@ -3,6 +3,8 @@ const http = require("node:http");
 module.exports = async function mockMedia() {
   let bucket = null;
   const objects = new Map();
+  const reads = new Map(),
+    controls = new Map();
   const key = "sb_secret_" + require("crypto").randomBytes(24).toString("hex");
   const server = http.createServer(async (req, res) => {
     if (req.headers.apikey !== key) {
@@ -36,13 +38,36 @@ module.exports = async function mockMedia() {
       req.method === "GET" &&
       pathname.includes("/object/authenticated/quizzes-media/")
     ) {
+      reads.set(id, (reads.get(id) || 0) + 1);
+      const control = controls.get(id) || {};
+      if (control.delay)
+        await new Promise((resolve) => setTimeout(resolve, control.delay));
+      if (control.failNext) {
+        control.failNext = false;
+        return json(503, {});
+      }
       const obj = objects.get(id);
       if (!obj) return json(404, {});
-      res.writeHead(200, {
-        "Content-Type": obj.mime,
-        "Content-Length": obj.bytes.length,
-      });
-      return res.end(obj.bytes);
+      let bytes = obj.bytes,
+        status = 200;
+      const headers = { "Content-Type": obj.mime, "Accept-Ranges": "bytes" };
+      if (req.headers.range) {
+        const m = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range);
+        const start = m ? Number(m[1]) : bytes.length;
+        const end = m?.[2]
+          ? Math.min(Number(m[2]), bytes.length - 1)
+          : bytes.length - 1;
+        if (start > end || start >= bytes.length) {
+          res.writeHead(416, { "Content-Range": `bytes */${bytes.length}` });
+          return res.end();
+        }
+        headers["Content-Range"] = `bytes ${start}-${end}/${bytes.length}`;
+        bytes = bytes.subarray(start, end + 1);
+        status = 206;
+      }
+      if (!control.unknownLength) headers["Content-Length"] = bytes.length;
+      res.writeHead(status, headers);
+      return res.end(bytes);
     }
     return json(404, {});
   });
@@ -50,6 +75,8 @@ module.exports = async function mockMedia() {
   return {
     url: "http://127.0.0.1:" + server.address().port,
     key,
+    reads: (id) => reads.get(id) || 0,
+    control: (id, options) => controls.set(id, options),
     stop: () => new Promise((r) => server.close(r)),
   };
 };

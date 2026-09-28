@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=0.8.0" />
   </head>
   <body>
     <div class="app-shell" id="hostApp">
@@ -181,7 +181,7 @@
           </section>
         </section>
         <section id="editor" class="view">
-          <form id="editorForm">
+          <form id="editorForm" novalidate>
             <div class="page-title">
               <div>
                 <div class="eyebrow">QUIZ STUDIO</div>
@@ -191,7 +191,14 @@
                 </p>
               </div>
               <div class="button-row">
-                <button type="button" class="secondary-btn" id="cancelEdit">
+                <button
+                  type="button"
+                  class="secondary-btn"
+                  id="openQuizSettings"
+                  aria-expanded="false"
+                >
+                  Quiz settings</button
+                ><button type="button" class="secondary-btn" id="cancelEdit">
                   Back to library</button
                 ><button class="primary-btn" type="submit" id="saveQuiz">
                   Save quiz
@@ -212,7 +219,8 @@
                 document.</label
               >
             </div>
-            <div class="panel editor-basics">
+            <details id="quizSettings" class="panel editor-basics" open>
+              <summary>Quiz settings · title, description & soundtrack</summary>
               <label
                 >Quiz title<input
                   id="quizTitle"
@@ -246,26 +254,50 @@
                   Remove music
                 </button>
               </div>
-            </div>
-            <div class="round-tools panel">
-              <b>Organize your rounds</b>
-              <p class="muted">
-                Select questions below, then move them together. Round names are
-                optional. Empty rounds are omitted when saving.
-              </p>
-              <div class="button-row">
-                <label
-                  >Move selected to
-                  <select id="bulkRound"></select></label
-                ><button id="moveSelected" type="button" class="secondary-btn">
-                  Move selected questions
+            </details>
+            <div class="studio-workspace">
+              <aside class="studio-rail">
+                <div class="rail-heading">
+                  QUESTIONS <span id="studioCount"></span>
+                </div>
+                <nav
+                  id="questionNavigator"
+                  aria-label="Question navigator"
+                ></nav>
+                <button
+                  type="button"
+                  class="primary-btn"
+                  id="studioAddQuestion"
+                >
+                  ＋ Add question</button
+                ><button type="button" class="outline-btn" id="addRound">
+                  ＋ Add round
                 </button>
-              </div>
+                <details class="studio-organize">
+                  <summary>Organize rounds</summary>
+                  <div class="round-tools panel">
+                    <b>Organize your rounds</b>
+                    <p class="muted">
+                      Select questions below, then move them together. Round
+                      names are optional. Empty rounds are omitted when saving.
+                    </p>
+                    <div class="button-row">
+                      <label
+                        >Move selected to
+                        <select id="bulkRound"></select></label
+                      ><button
+                        id="moveSelected"
+                        type="button"
+                        class="secondary-btn"
+                      >
+                        Move selected questions
+                      </button>
+                    </div>
+                  </div>
+                </details>
+              </aside>
+              <div id="roundEditor"></div>
             </div>
-            <div id="roundEditor"></div>
-            <button type="button" class="outline-btn" id="addRound">
-              ＋ Add round
-            </button>
             <p class="form-status" id="saveStatus" role="status"></p>
           </form>
         </section>
@@ -588,8 +620,7 @@
         <div class="game-grid">
           <div class="game-stage">
             <div class="stage-top">
-              <span class="pill" id="hostRound">LOBBY</span
-              ><span class="live-dot" id="hostTimer" role="timer">READY</span>
+              <span class="pill" id="hostRound">LOBBY</span>
             </div>
             <div class="stage-question">
               <span class="question-number" id="hostQuestionNumber"></span>
@@ -597,7 +628,13 @@
               <p id="hostHint">
                 Share the join link, then start the first question.
               </p>
-              <div id="hostMedia"></div>
+              <div class="live-media-row">
+                <span class="live-dot" id="hostTimer" role="timer">READY</span>
+                <div id="hostMedia"></div>
+                <div class="live-answer-counter">
+                  <b id="liveAnswerMeter">0</b><span>Answers</span>
+                </div>
+              </div>
               <div class="answer-grid" id="hostOptions"></div>
               <div id="hostResults"></div>
               <section
@@ -643,10 +680,9 @@
         <main class="participant-card">
           <form id="joinPanel">
             <div class="eyebrow">YOUR SEAT IS WAITING</div>
-            <h1>Ready to play?</h1>
+            <h1>Join a game</h1>
             <p class="muted">
-              Enter the game code from your host. Let’s make this a moment to
-              remember.
+              Enter your game code and nickname. Your next challenge is waiting.
             </p>
             <label
               >Game code<input
@@ -816,6 +852,73 @@ Answer: together</pre
     </dialog>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <main id="independentApp" class="independent-shell" hidden></main>
+    <dialog
+      id="assignDialog"
+      class="assign-dialog"
+      aria-labelledby="assignHeading"
+    >
+      <button
+        type="button"
+        id="closeAssign"
+        class="modal-close"
+        aria-label="Close assignment settings"
+      >
+        ×
+      </button>
+      <div class="assign-intro">
+        <div class="eyebrow">LEARNING, ON THEIR TIME</div>
+        <div class="assign-art" aria-hidden="true">✦</div>
+        <h2>Make room for discovery.</h2>
+        <p>One link. Every learner at their own pace.</p>
+        <ul>
+          <li>Immediate answer feedback</li>
+          <li>Saved progress</li>
+          <li>A leaderboard after finishing</li>
+        </ul>
+      </div>
+      <form id="assignForm">
+        <div class="eyebrow">SELF-PACED QUIZ</div>
+        <h2 id="assignHeading">Assign your quiz</h2>
+        <p id="assignQuizTitle"></p>
+        <label
+          >Complete before<input
+            id="assignDeadline"
+            type="datetime-local"
+            required
+        /></label>
+        <p class="muted">
+          Your device's local time zone. Default: tomorrow at this time.
+        </p>
+        <label class="setting-toggle"
+          ><span
+            ><b>Question timer</b
+            ><small
+              >Use each question's time limit. Time runs even if the tab is
+              closed. The next timer starts only when Next is pressed.</small
+            ></span
+          ><input id="assignTimer" type="checkbox" role="switch"
+        /></label>
+        <label class="setting-toggle"
+          ><span
+            ><b>Shuffle answer order</b
+            ><small
+              >A stable, randomized order for each participant. Correct answers
+              and partial credit are preserved.</small
+            ></span
+          ><input id="assignShuffle" type="checkbox" role="switch"
+        /></label>
+        <p class="assignment-note">
+          Up to 100 browser attempts. No speed bonus. Correct answers appear
+          after submitting; finishers can see nicknames and scores.
+        </p>
+        <p id="assignStatus" role="status"></p>
+        <div class="button-row">
+          <button id="cancelAssign" type="button" class="secondary-btn">
+            Cancel</button
+          ><button type="submit" class="primary-btn">Create assignment</button>
+        </div>
+      </form>
+    </dialog>
     <dialog id="extendDialog" class="import-dialog">
       <button
         class="modal-close"
@@ -854,8 +957,8 @@ Answer: together</pre
         Download results CSV
       </button>
     </dialog>
-    <script src="/quiz-sound.js"></script>
-    <script src="/app.js"></script>
-    <script src="/extensions.js"></script>
+    <script src="/quiz-sound.js?v=0.8.0"></script>
+    <script src="/app.js?v=0.8.0"></script>
+    <script src="/extensions.js?v=0.8.0"></script>
   </body>
 </html>

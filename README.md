@@ -1,15 +1,18 @@
-# Quizzes · v0.7
+# Quizzes · v0.8
 
 A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s read-only oversight. No subscriptions, billing or participant payments.
 
-**Deployment status:** the existing Northflank/Supabase installation is running with the verified TLS configuration fix. This v0.7 update is locally tested, not yet deployed. Follow **[APPLY-v0.7-update.md](APPLY-v0.7-update.md)**. Keep the same free service, external database, private media and environment variables. Never send passwords or API keys in chat.
+**Deployment status:** the existing Northflank/Supabase installation is running with the verified TLS configuration fix. This v0.8 update is locally tested, not yet deployed. Follow **[APPLY-v0.8-update.md](APPLY-v0.8-update.md)**. Keep the same free service, external database, private media and environment variables. Never send passwords or API keys in chat.
 
-## v0.7 display improvements
+## v0.8 Studio and assignments
 
-- Larger desktop workspace text and a full-width live host screen, without a score sidebar or host leaderboard. Joined and answered counts remain visible.
-- Host-controlled live leaderboard replaces the question on participant screens, including reconnects. The host still sees the current question and controls.
-- Viewport-aware question, option and image sizing plus optional full screen. Typical six-option/image questions were checked at 1280×720, 1366×768, 1920×1080 and 1024×768 host sizes, and phone/tablet/player sizes. Very long content, small windows and high zoom may still scroll; text is not clipped or made unreadably small.
-- Self-paced feedback and completed-only participant leaderboards do not require a schema change. Submitted progress, scores and existing links are kept. Refreshing during feedback resumes the next unanswered question; completed attempts can review all answers.
+- Original Quizzes join screen; code and nickname remain in one step.
+- Question thumbnails, editable colored answer tiles with correct-answer circles, large media preview, property controls, duplication and round organization. Quiz settings remain accessible in the top toolbar. No image reveal.
+- Presentation-style live host screen with larger media, countdown/answer indicators and compact controls. Both host and players see requested/round-end leaderboards, and the host sees final winners.
+- Assign a saved quiz with a chosen closing date/time (default 24 hours), optional per-question timer and optional stable per-attempt answer shuffle. Existing publications remain untimed/unshuffled. Options are fixed at publication.
+- Timers are server-enforced, survive reload/restart, and continue while a tab is closed. Late answers earn zero. The next timer starts only on Next, not while feedback is showing. Expiry resolves on a request; no cron is needed. Self-paced points have no speed bonus.
+- Shuffled displayed indices are mapped back before grading. Immediate feedback and completed-only participant leaderboards remain enabled.
+- Embedded, OFL-licensed Gujarati typography. The browser requires no font CDN. See FONT-LICENSE.txt.
 
 ## Implemented
 
@@ -27,7 +30,7 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 - SQLite/local media for a local installation **or PostgreSQL/private Supabase media for cloud hosting**. Render startup refuses missing external-storage configuration.
 - Private, workspace-scoped ZIP backup download with password confirmation; includes the signed-in host account, quizzes, reports, media, recovery-code hashes, publications and submitted attempts, but not other hosts, invitation links, login sessions, hosting keys or live rooms. The operator CLI backup is installation-wide.
 - Restore command for a fresh destination; supports v1/v2 backups and refuses to overwrite existing accounts or reports.
-- Publish an immutable quiz snapshot for 24 hours, up to 100 browser attempts; nickname entry, saved submitted progress, provisional/final host results and CSV export. Participants see correct answers and points immediately after each submitted or skipped question, then press Next. Unsubmitted solutions remain private while the quiz is open. After completing, they see nicknames/scores of completed attempts only; equal scores share a competition rank (1, 1, 3). This applies to existing and new publications for all hosts. Deadlines are request-enforced, not dependent on background jobs.
+- Publish an immutable quiz snapshot with a chosen closing time (default 24 hours), up to 100 browser attempts; nickname entry, saved submitted progress, provisional/final host results and CSV export. Participants see correct answers and points immediately after each submitted or skipped question, then press Next. Unsubmitted solutions remain private while the quiz is open. After completing, they see nicknames/scores of completed attempts only; equal scores share a competition rank (1, 1, 3). This applies to existing and new publications for all hosts. Deadlines are request-enforced, not dependent on background jobs.
 - One-use friend invitations expire in 24 hours. Friends create separate logins and empty workspaces. Friends cannot view each other’s work; the designated site administrator can view saved quizzes/media/reports and publication results. This access is disclosed in signup and workspace notices. No public signup, account fees, shared editing rights or automatic quiz copying.
 - Optional SITE_ADMIN_EMAIL grants read-only installation oversight to one existing main account. It does not grant mutation of friends’ content, password/recovery access or cross-workspace backups.
 - Confirmed deletion of an individual saved live report, all own saved live reports, or a closed publication with its attempts. Source quizzes/media and old backups are kept.
@@ -36,7 +39,7 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 
 ## Current behavior and scoring
 
-See **[APPLY-v0.7-update.md](APPLY-v0.7-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
+See **[APPLY-v0.8-update.md](APPLY-v0.8-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
 
 ## Database authentication troubleshooting
 
@@ -113,7 +116,7 @@ Pause editing/uploads while backing up for application-level consistency. Large 
 
 ## Tests
 
-For v0.7 verification and boundaries, see [RELEASE-v0.7.md](RELEASE-v0.7.md).
+For v0.8 verification and boundaries, see [RELEASE-v0.8.md](RELEASE-v0.8.md).
 
 ```sh
 npm test
@@ -159,7 +162,7 @@ Tests use only `TEST_DATABASE_URL`, not your production `DATABASE_URL`. The test
 - Removed attachments remain stored until manually cleaned up. Manual report/closed-publication deletion is available; automated retention/media cleanup is not. Deletion does not erase downloaded copies or earlier backups.
 - No email-based reset, co-host editing permission levels within a workspace, sample-synchronized media, dedicated event-sound configuration, native mobile apps, full accessibility audit or managed monitoring/backup scheduling yet.
 - Browser-level attempt prevention can be bypassed by clearing cookies, private browsing or another browser/device. This is not identity verification or a proctored-exam system.
-- Self-paced windows initially close 24 hours after publication, not 24 hours after joining; the owner may extend them while still open. Only submitted answers persist. Partial attempts count in final results. Free-hosting downtime does not extend deadlines.
+- Self-paced windows close at the chosen publication deadline (default 24 hours after publication, not after joining); the owner may extend them while still open. An extension does not reset a running per-question timer. Only submitted answers persist. Partial attempts count in final results. Free-hosting downtime does not extend deadlines.
 - Private workspaces share free-tier quotas; inviting a friend does not create an additional free server/database allocation.
 - Never roll back to v0.4 or earlier against a database containing private friend workspaces: those versions do not enforce isolation. See the update guide before any rollback.
 

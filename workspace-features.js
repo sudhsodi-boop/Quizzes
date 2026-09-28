@@ -74,6 +74,79 @@ module.exports = function workspaceFeatures({
       mediaType: q.mediaType,
     };
   }
+  function publicationSettings(pub) {
+    const settings = JSON.parse(pub.document).publicationSettings || {};
+    return {
+      timerEnabled: settings.timerEnabled === true,
+      randomizeAnswers: settings.randomizeAnswers === true,
+    };
+  }
+  function answerOrder(q, index, settings, progress) {
+    const order = (q.options || []).map((_, i) => i);
+    if (!settings.randomizeAnswers || !progress.shuffleSeed) return order;
+    const bytes = crypto
+      .createHmac("sha256", progress.shuffleSeed)
+      .update(String(index))
+      .digest();
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = bytes[i] % (i + 1);
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    return order;
+  }
+  function startAttemptQuestion(pub, progress) {
+    const q = flat(pub)[progress.answers.length];
+    progress.deadline =
+      publicationSettings(pub).timerEnabled && q
+        ? Math.min(Date.now() + q.seconds * 1000, Number(pub.closes))
+        : 0;
+  }
+  function recordAnswer(
+    pub,
+    progress,
+    answer,
+    skipped = false,
+    timedOut = false,
+  ) {
+    const questions = flat(pub),
+      index = progress.answers.length,
+      q = questions[index];
+    const credit = skipped || timedOut ? 0 : grade(q, answer);
+    const points = Math.round(q.points * credit);
+    progress.answers.push({
+      index,
+      answer: skipped || timedOut ? null : answer,
+      credit,
+      points,
+      timedOut,
+    });
+    progress.score += points;
+    progress.completed = progress.answers.length === questions.length;
+    progress.deadline = 0;
+  }
+  async function saveProgress(tx, attempt, progress) {
+    attempt.document = JSON.stringify(progress);
+    await tx
+      .prepare("UPDATE attempts SET document=?,updated=? WHERE id=?")
+      .run(attempt.document, Date.now(), attempt.id);
+  }
+  async function settleExpired(tx, pub, attempt) {
+    if (
+      !attempt ||
+      Number(pub.closes) <= Date.now() ||
+      !publicationSettings(pub).timerEnabled
+    )
+      return;
+    const progress = JSON.parse(attempt.document);
+    if (
+      !progress.completed &&
+      progress.deadline &&
+      Date.now() >= progress.deadline
+    ) {
+      recordAnswer(pub, progress, null, true, true);
+      await saveProgress(tx, attempt, progress);
+    }
+  }
   async function publicState(pub, attempt, tx = db) {
     const quiz = JSON.parse(pub.document),
       questions = flat(pub),
@@ -89,6 +162,7 @@ module.exports = function workspaceFeatures({
       rounds: quiz.rounds.length,
       music: !closed ? mediaURL(quiz.music) : "",
       serverNow: Date.now(),
+      settings: publicationSettings(pub),
     };
     if (state) {
       result.attempt = {
@@ -98,11 +172,24 @@ module.exports = function workspaceFeatures({
         closed,
         score: state.score,
       };
-      if (!closed && !state.completed)
-        result.question = safeQuestion(
-          questions[state.answers.length],
-          state.answers.length,
-        );
+      result.awaitingNext =
+        !closed &&
+        !state.completed &&
+        result.settings.timerEnabled &&
+        !state.deadline;
+      if (!closed && !state.completed && !result.awaitingNext) {
+        const index = state.answers.length,
+          q = questions[index];
+        result.question = safeQuestion(q, index);
+        result.question.options = answerOrder(
+          q,
+          index,
+          result.settings,
+          state,
+        ).map((i) => q.options[i]);
+        result.question.seconds = q.seconds;
+        result.question.deadline = state.deadline || null;
+      }
       {
         // Never reveal unsubmitted questions while a publication is open.
         result.solutions = questions
@@ -113,6 +200,7 @@ module.exports = function workspaceFeatures({
             yourAnswer: state.answers[i]?.answer ?? null,
             pointsEarned: state.answers[i]?.points || 0,
             credit: state.answers[i]?.credit || 0,
+            timedOut: state.answers[i]?.timedOut === true,
           }));
       }
     }
@@ -265,10 +353,24 @@ module.exports = function workspaceFeatures({
         if (!row) fail("Quiz not found.", 404);
         const id = crypto.randomBytes(16).toString("hex"),
           created = Date.now(),
-          closes = created + 24 * 60 * 60 * 1000;
+          closes = x.closes ?? created + 24 * 60 * 60 * 1000;
+        if (
+          !Number.isSafeInteger(closes) ||
+          closes <= created ||
+          closes > created + 365 * 24 * 60 * 60 * 1000
+        )
+          fail("Choose a future closing time, no more than one year from now.");
+        for (const key of ["timerEnabled", "randomizeAnswers"])
+          if (x[key] !== undefined && typeof x[key] !== "boolean")
+            fail("Invalid publication option.");
+        const snapshot = JSON.parse(row.document);
+        snapshot.publicationSettings = {
+          timerEnabled: x.timerEnabled === true,
+          randomizeAnswers: x.randomizeAnswers === true,
+        };
         await db
           .prepare("INSERT INTO publications VALUES (?,?,?,?,?)")
-          .run(id, host.id, row.document, created, closes);
+          .run(id, host.id, JSON.stringify(snapshot), created, closes);
         return send(res, { id, path: "/play?quiz=" + id, closes }, 201);
       }
       if (req.method === "GET") {
@@ -284,6 +386,7 @@ module.exports = function workspaceFeatures({
             title: JSON.parse(row.document).title,
             created: Number(row.created),
             closes: Number(row.closes),
+            settings: publicationSettings(row),
             participants: Number(
               (
                 await db
@@ -386,7 +489,7 @@ module.exports = function workspaceFeatures({
       }
     }
     const match = p.match(
-      /^\/api\/published\/([a-f0-9]{32})(?:\/(join|answer))?$/,
+      /^\/api\/published\/([a-f0-9]{32})(?:\/(join|answer|next))?$/,
     );
     if (!match) {
       if (p.startsWith("/api/published/"))
@@ -396,14 +499,22 @@ module.exports = function workspaceFeatures({
     const id = match[1],
       b = browser(req);
     if (req.method === "GET" && !match[2]) {
-      const pub = await getPub(id);
-      const attempt = b
-        ? await db
-            .prepare(
-              "SELECT * FROM attempts WHERE publication_id=? AND browser_hash=?",
-            )
-            .get(id, hash(b))
-        : null;
+      let state;
+      await db.withTransaction(async (tx) => {
+        const pub = await tx
+          .prepare("SELECT * FROM publications WHERE id=?" + lock)
+          .get(id);
+        if (!pub) fail("Published quiz not found.", 404);
+        const attempt = b
+          ? await tx
+              .prepare(
+                "SELECT * FROM attempts WHERE publication_id=? AND browser_hash=?",
+              )
+              .get(id, hash(b))
+          : null;
+        await settleExpired(tx, pub, attempt);
+        state = await publicState(pub, attempt, tx);
+      });
       const headers = b
         ? {}
         : {
@@ -413,7 +524,7 @@ module.exports = function workspaceFeatures({
               180 * 24 * 60 * 60,
             ).replace("quizzes_session=", "quizzes_attempt="),
           };
-      return send(res, await publicState(pub, attempt), 200, headers);
+      return send(res, state, 200, headers);
     }
     if (req.method !== "POST") return false;
     if (!b) fail("Allow cookies and reload this page before starting.");
@@ -456,9 +567,13 @@ module.exports = function workspaceFeatures({
               answers: [],
               score: 0,
               completed: false,
+              shuffleSeed: crypto.randomBytes(16).toString("hex"),
             }),
             updated: Date.now(),
           };
+          const progress = JSON.parse(attempt.document);
+          startAttemptQuestion(pub, progress);
+          attempt.document = JSON.stringify(progress);
           await tx
             .prepare("INSERT INTO attempts VALUES (?,?,?,?,?,?)")
             .run(
@@ -470,30 +585,49 @@ module.exports = function workspaceFeatures({
               attempt.updated,
             );
         }
+        await settleExpired(tx, pub, attempt);
+      } else if (match[2] === "next") {
+        if (!attempt) fail("Join the quiz first.", 403);
+        await settleExpired(tx, pub, attempt);
+        const progress = JSON.parse(attempt.document);
+        if (progress.completed || x.index !== progress.answers.length)
+          fail("Progress changed. Reload to resume.", 409);
+        // Idempotent: another tab or retry must not reset a running question's timer.
+        if (publicationSettings(pub).timerEnabled && !progress.deadline) {
+          startAttemptQuestion(pub, progress);
+          await saveProgress(tx, attempt, progress);
+        }
       } else if (match[2] === "answer") {
         if (!attempt) fail("Join the quiz first.", 403);
         const progress = JSON.parse(attempt.document),
-          questions = flat(pub);
+          questions = flat(pub),
+          settings = publicationSettings(pub);
         if (progress.completed || x.index !== progress.answers.length)
           fail(
             "This question was already submitted or changed. Reload to resume.",
             409,
           );
+        if (settings.timerEnabled && !progress.deadline)
+          fail("Press Next question to start this question.", 409);
         const q = questions[progress.answers.length];
-        const credit = x.skip === true ? 0 : grade(q, x.answer);
-        const points = Math.round(q.points * credit);
-        progress.answers.push({
-          index: x.index,
-          answer: x.skip === true ? null : x.answer,
-          credit,
-          points,
-        });
-        progress.score += points;
-        progress.completed = progress.answers.length === questions.length;
-        attempt.document = JSON.stringify(progress);
-        await tx
-          .prepare("UPDATE attempts SET document=?,updated=? WHERE id=?")
-          .run(attempt.document, Date.now(), attempt.id);
+        const timedOut =
+          settings.timerEnabled && Date.now() >= progress.deadline;
+        let answer = x.answer;
+        if (!timedOut && x.skip !== true && q.type !== "text") {
+          const order = answerOrder(q, x.index, settings, progress);
+          const mapIndex = (i) => {
+            if (!Number.isInteger(i) || i < 0 || i >= order.length)
+              fail("Choose a valid answer.");
+            return order[i];
+          };
+          if (q.type === "multi") {
+            if (!Array.isArray(answer) || answer.length > order.length)
+              fail("Choose valid answers.");
+            answer = answer.map(mapIndex);
+          } else answer = mapIndex(answer);
+        }
+        recordAnswer(pub, progress, answer, x.skip === true, timedOut);
+        await saveProgress(tx, attempt, progress);
       } else fail("Action not found.", 404);
       state = await publicState(pub, attempt, tx);
     });

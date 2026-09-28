@@ -87,6 +87,7 @@ function showView(id, force = false) {
   )
     return;
   currentView = id;
+  document.body.classList.toggle("editor-mode", id === "editor");
   $$(".view").forEach((v) => v.classList.toggle("active-view", v.id === id));
   $$("[data-view]").forEach((n) =>
     n.classList.toggle("active", n.dataset.view === id),
@@ -236,7 +237,7 @@ function renderWorkspace() {
     quizzes
       .map(
         (q) =>
-          `<article class="library-card"><div class="quiz-thumb violet">✦</div><b>${e(q.title)}</b><span>${summary(q)}</span><p class="muted quiz-description">${e(q.description || "A new moment for your community.")}</p><div class="button-row"><button class="primary-btn" data-launch="${q.id}">Host game ↗</button><button class="secondary-btn" data-publish="${q.id}">Publish 24h</button><button class="secondary-btn" data-edit="${q.id}">Edit</button><button class="text-btn" data-delete="${q.id}" aria-label="Delete ${e(q.title)}">Delete</button></div></article>`,
+          `<article class="library-card"><div class="quiz-thumb violet">✦</div><b>${e(q.title)}</b><span>${summary(q)}</span><p class="muted quiz-description">${e(q.description || "A new moment for your community.")}</p><div class="button-row"><button class="primary-btn" data-launch="${q.id}">Host game ↗</button><button class="secondary-btn" data-publish="${q.id}">Assign quiz</button><button class="secondary-btn" data-edit="${q.id}">Edit</button><button class="text-btn" data-delete="${q.id}" aria-label="Delete ${e(q.title)}">Delete</button></div></article>`,
       )
       .join("");
   $("#clearReports").disabled = !account || !reports.length;
@@ -393,6 +394,8 @@ function editQuiz(q) {
   openEditor();
 }
 function openEditor() {
+  activeEditorQuestion = draft.rounds[0]?.questions[0];
+  $("#quizSettings").open = !draft.id;
   dirty = false;
   const report = draft._importReport;
   $("#importReview").hidden = !report;
@@ -416,12 +419,13 @@ function openEditor() {
   renderEditor();
   showView("editor", true);
 }
-function mediaHTML(url, type) {
+function mediaHTML(url, type, lazy = false) {
   if (!url) return "";
   return type?.startsWith("image/")
-    ? `<img class="question-media" src="${e(url)}" alt="Question image">`
+    ? `<img class="question-media" ${lazy ? 'loading="lazy"' : ""} decoding="async" src="${e(url)}" alt="Question image">`
     : `<audio controls preload="metadata" src="${e(url)}" class="question-audio"></audio>`;
 }
+let activeEditorQuestion = null;
 function renderEditor() {
   $("#bulkRound").innerHTML =
     draft.rounds
@@ -435,10 +439,147 @@ function renderEditor() {
   $("#roundEditor").innerHTML = draft.rounds
     .map(
       (r, ri) =>
-        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round name · optional<input class="round-title" value="${e(r.title)}" maxlength="100" placeholder="e.g. Easy — leave blank for Round ${ri + 1}"></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><label class="select-question"><input type="checkbox" class="question-select"> Select Q${qi + 1}</label><label class="assign-label">Round<select data-assign-round>${draft.rounds.map((round, index) => `<option value="${index}" ${index === ri ? "selected" : ""}>${e(roundTitle(index, round.title))}</option>`).join("")}<option value="new">＋ New round</option></select></label><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="multi" ${q.type === "multi" ? "selected" : ""}>Multiple correct answers</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option></select></label><label>Time · seconds<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct" required><option value="" ${q.correct < 0 ? "selected" : ""}>Select correct answer</option><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label>${q.type === "multi" ? `<fieldset class="multi-correct"><legend>Correct answers · select all that apply</legend>${(q.options || []).map((option, i) => `<label><input type="checkbox" data-correct-index="${i}" ${(q.correctAnswers || []).includes(i) ? "checked" : ""}> ${e(option || `Option ${i + 1}`)}</label>`).join("")}</fieldset><p class="muted">Partial credit: correct fraction minus wrong fraction, minimum zero.</p>` : `<label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) >= 0 ? Number(q.correct) + 1 : ""}"></label>`}`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
+        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round name · optional<input class="round-title" value="${e(r.title)}" maxlength="100" placeholder="e.g. Easy — leave blank for Round ${ri + 1}"></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><label class="select-question"><input type="checkbox" class="question-select"> Select Q${qi + 1}</label><label class="assign-label">Round<select data-assign-round>${draft.rounds.map((round, index) => `<option value="${index}" ${index === ri ? "selected" : ""}>${e(roundTitle(index, round.title))}</option>`).join("")}<option value="new">＋ New round</option></select></label><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="multi" ${q.type === "multi" ? "selected" : ""}>Multiple correct answers</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option></select></label><label>Time · seconds<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct" required><option value="" ${q.correct < 0 ? "selected" : ""}>Select correct answer</option><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label>${q.type === "multi" ? `<fieldset class="multi-correct"><legend>Correct answers · select all that apply</legend>${(q.options || []).map((option, i) => `<label><input type="checkbox" data-correct-index="${i}" ${(q.correctAnswers || []).includes(i) ? "checked" : ""}> ${e(option || `Option ${i + 1}`)}</label>`).join("")}</fieldset><p class="muted">Partial credit: correct fraction minus wrong fraction, minimum zero.</p>` : `<label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) >= 0 ? Number(q.correct) + 1 : ""}"></label>`}`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType, true)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
     )
     .join("");
+  buildStudio();
 }
+function showStudioSelection() {
+  for (const section of $$("#roundEditor .round-section")) {
+    const ri = Number(section.dataset.round);
+    section.hidden = !draft.rounds[ri].questions.includes(activeEditorQuestion);
+    for (const card of $$(".question-card", section))
+      card.hidden =
+        draft.rounds[ri].questions[Number(card.dataset.qi)] !==
+        activeEditorQuestion;
+  }
+  for (const button of $$("[data-studio-question]")) {
+    const [ri, qi] = button.dataset.studioQuestion.split(":").map(Number);
+    const selected = draft.rounds[ri].questions[qi] === activeEditorQuestion;
+    button.classList.toggle("selected", selected);
+    button.setAttribute("aria-current", String(selected));
+  }
+}
+function buildStudio() {
+  const all = draft.rounds.flatMap((r) => r.questions);
+  if (!all.includes(activeEditorQuestion)) activeEditorQuestion = all[0];
+  $("#studioCount").textContent = all.length;
+  let count = 0;
+  $("#questionNavigator").innerHTML = draft.rounds
+    .map(
+      (r, ri) =>
+        `<div class="rail-round">${e(roundTitle(ri, r.title))}</div>${r.questions.map((q, qi) => `<div class="question-thumb"><input type="checkbox" data-studio-select="${ri}:${qi}" aria-label="Select question ${++count} for moving"><button type="button" data-studio-question="${ri}:${qi}"><span class="thumb-meta">${count}. ${q.type === "multi" ? "Multiple answers" : q.type === "text" ? "Type an answer" : "Quiz"}</span><span class="thumb-title">${e(q.text || "Your next question")}</span><span class="thumb-preview">${q.media && q.mediaType?.startsWith("image/") ? `<img loading="lazy" src="${e(q.media)}" alt="">` : '<span aria-hidden="true">✦</span>'}</span><span class="thumb-answers"><i></i><i></i><i></i><i></i></span></button></div>`).join("")}`,
+    )
+    .join("");
+  for (const card of $$("#roundEditor .question-card")) {
+    const q = draft.rounds[card.dataset.ri].questions[card.dataset.qi];
+    const columns = $(".editor-columns", card),
+      main = columns.firstElementChild;
+    const questionLabel = main.firstElementChild,
+      media = $(".media-editor", card),
+      head = $(".question-card-head", card);
+    const canvas = document.createElement("div");
+    canvas.className = "studio-canvas";
+    const promptInput = $("[data-field=text]", questionLabel);
+    const prompt = document.createElement("textarea");
+    for (const attr of promptInput.attributes)
+      prompt.setAttribute(attr.name, attr.value);
+    prompt.rows = 2;
+    prompt.value = q.text;
+    prompt.removeAttribute("value");
+    promptInput.replaceWith(prompt);
+    questionLabel.classList.add("studio-prompt");
+    canvas.append(questionLabel, media);
+    const tiles = document.createElement("div");
+    tiles.className = "studio-answer-tiles";
+    if (q.type === "text") {
+      const accepted = $("[data-field=accepted]", main).closest("label");
+      accepted.classList.add("studio-text-answer");
+      canvas.append(accepted);
+    } else {
+      tiles.innerHTML = q.options
+        .map(
+          (option, i) =>
+            `<div class="studio-answer tile-${i}"><span class="studio-shape" aria-hidden="true">${["▲", "◆", "●", "■", "⬟", "★"][i]}</span><textarea aria-label="Answer ${i + 1}" data-studio-option="${i}" rows="2" maxlength="500" ${q.type === "boolean" ? "readonly" : ""} placeholder="Add answer ${i + 1}">${e(option)}</textarea><button type="button" class="correct-toggle" data-studio-correct="${i}" aria-label="Mark answer ${i + 1} correct" aria-pressed="${q.type === "multi" ? (q.correctAnswers || []).includes(i) : q.correct === i}">${q.type === "multi" ? ((q.correctAnswers || []).includes(i) ? "✓" : "") : q.correct === i ? "✓" : ""}</button>${q.type !== "boolean" && q.options.length > 2 ? `<button type="button" class="remove-option" data-studio-remove-option="${i}" aria-label="Remove answer ${i + 1}">×</button>` : ""}</div>`,
+        )
+        .join("");
+      canvas.append(tiles);
+      const tip = document.createElement("p");
+      tip.className = "studio-answer-tip";
+      tip.textContent =
+        q.type === "multi"
+          ? "Select every correct answer using the circles. Partial credit applies."
+          : "Select the circle beside the correct answer.";
+      canvas.append(tip);
+      if (["choice", "multi"].includes(q.type) && q.options.length < 6) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "secondary-btn add-answer";
+        add.dataset.studioAddOption = "";
+        add.textContent = "＋ Add answer";
+        canvas.append(add);
+      }
+    }
+    const settings = document.createElement("aside");
+    settings.className = "studio-properties";
+    settings.innerHTML =
+      '<div class="eyebrow">QUESTION SETTINGS</div><h3>Make it your own</h3>';
+    settings.append($(".editor-grid", main));
+    const details = document.createElement("details");
+    details.className = "studio-key";
+    details.innerHTML = "<summary>Answer key & bulk editing</summary>";
+    while (main.firstChild) details.append(main.firstChild);
+    settings.append(details, head);
+    const duplicate = document.createElement("button");
+    duplicate.type = "button";
+    duplicate.className = "secondary-btn";
+    duplicate.dataset.duplicateQuestion = "";
+    duplicate.textContent = "Duplicate question";
+    settings.append(duplicate);
+    columns.replaceWith(canvas, settings);
+  }
+  showStudioSelection();
+}
+$("#questionNavigator").onclick = (event) => {
+  const b = event.target.closest("[data-studio-question]");
+  if (!b) return;
+  collectDraft();
+  const [ri, qi] = b.dataset.studioQuestion.split(":").map(Number);
+  activeEditorQuestion = draft.rounds[ri].questions[qi];
+  showStudioSelection();
+};
+$("#questionNavigator").onchange = (event) => {
+  const input = event.target.closest("[data-studio-select]");
+  if (!input) return;
+  const [ri, qi] = input.dataset.studioSelect.split(":");
+  $(
+    `.question-card[data-ri="${ri}"][data-qi="${qi}"] .question-select`,
+  ).checked = input.checked;
+};
+$("#studioAddQuestion").onclick = () => {
+  const ri = Math.max(
+    0,
+    draft.rounds.findIndex((r) => r.questions.includes(activeEditorQuestion)),
+  );
+  $(`#roundEditor [data-add-question="${ri}"]`).click();
+};
+$("#roundEditor").addEventListener("input", (event) => {
+  if (event.target.matches("[data-studio-option]")) {
+    const card = event.target.closest(".question-card");
+    const input = $("[data-field=options]", card);
+    if (input)
+      input.value = $$("[data-studio-option]", card)
+        .map((el) => el.value.replace(/\n/g, " "))
+        .join("\n");
+  }
+  if (event.target.matches("[data-field=text]")) {
+    const card = event.target.closest(".question-card");
+    const title = $(
+      `[data-studio-question="${card.dataset.ri}:${card.dataset.qi}"] .thumb-title`,
+    );
+    if (title) title.textContent = event.target.value || "Your next question";
+  }
+});
 function collectDraft() {
   if (!draft) return;
   draft.title = $("#quizTitle").value;
@@ -491,10 +632,7 @@ $("#roundEditor").addEventListener("change", (event) => {
   if (event.target.dataset.field === "options") {
     collectDraft();
     const card = event.target.closest(".question-card");
-    if (
-      draft.rounds[card.dataset.ri].questions[card.dataset.qi].type === "multi"
-    )
-      renderEditor();
+    renderEditor();
   }
   if (event.target.dataset.field === "type") {
     collectDraft();
@@ -521,9 +659,42 @@ $("#roundEditor").addEventListener("click", (event) => {
   const card = b.closest(".question-card");
   const ri = Number(card?.dataset.ri),
     qi = Number(card?.dataset.qi);
-  if (b.hasAttribute("data-add-question"))
-    draft.rounds[Number(b.dataset.addQuestion)].questions.push(blankQuestion());
-  else if (b.hasAttribute("data-remove-round")) {
+  if (b.hasAttribute("data-add-question")) {
+    if (draft.rounds.flatMap((r) => r.questions).length >= 200)
+      return showToast("Maximum 200 questions.");
+    activeEditorQuestion = blankQuestion();
+    draft.rounds[Number(b.dataset.addQuestion)].questions.push(
+      activeEditorQuestion,
+    );
+  } else if (b.hasAttribute("data-studio-correct")) {
+    const q = draft.rounds[ri].questions[qi],
+      index = Number(b.dataset.studioCorrect);
+    if (q.type === "multi") {
+      const keys = new Set(q.correctAnswers || []);
+      if (keys.has(index)) keys.delete(index);
+      else keys.add(index);
+      q.correctAnswers = [...keys].sort((a, b) => a - b);
+    } else q.correct = index;
+  } else if (b.hasAttribute("data-duplicate-question")) {
+    if (draft.rounds.flatMap((r) => r.questions).length >= 200)
+      return showToast("Maximum 200 questions.");
+    activeEditorQuestion = structuredClone(draft.rounds[ri].questions[qi]);
+    draft.rounds[ri].questions.splice(qi + 1, 0, activeEditorQuestion);
+  } else if (b.hasAttribute("data-studio-add-option")) {
+    const q = draft.rounds[ri].questions[qi];
+    if (q.options.length >= 6) return;
+    q.options.push("");
+  } else if (b.hasAttribute("data-studio-remove-option")) {
+    const q = draft.rounds[ri].questions[qi],
+      i = Number(b.dataset.studioRemoveOption);
+    if (q.options.length <= 2) return;
+    q.options.splice(i, 1);
+    q.correct =
+      q.correct === i ? -1 : q.correct > i ? q.correct - 1 : q.correct;
+    q.correctAnswers = (q.correctAnswers || [])
+      .filter((k) => k !== i)
+      .map((k) => (k > i ? k - 1 : k));
+  } else if (b.hasAttribute("data-remove-round")) {
     if (draft.rounds.length === 1) return showToast("Keep at least one round.");
     if (!confirm("Remove this round and its questions?")) return;
     draft.rounds.splice(Number(b.dataset.removeRound), 1);
@@ -548,9 +719,19 @@ $("#addRound").onclick = () => {
     title: `Round ${draft.rounds.length + 1}`,
     questions: [blankQuestion()],
   });
+  activeEditorQuestion = draft.rounds.at(-1).questions[0];
   dirty = true;
   renderEditor();
 };
+$("#openQuizSettings").onclick = () => {
+  $("#quizSettings").open = !$("#quizSettings").open;
+  if ($("#quizSettings").open) window.scrollTo({ top: 0, behavior: "smooth" });
+};
+$("#quizSettings").ontoggle = () =>
+  $("#openQuizSettings").setAttribute(
+    "aria-expanded",
+    String($("#quizSettings").open),
+  );
 $("#cancelEdit").onclick = () => showView("quizzes");
 $("#removeMusic").onclick = () => {
   collectDraft();
@@ -622,6 +803,19 @@ $("#musicFile").onchange = async (event) => {
 $("#editorForm").onsubmit = async (event) => {
   event.preventDefault();
   if (uploadCount) return showToast("Please wait for your uploads to finish.");
+  const invalid = $("#editorForm :invalid");
+  if (invalid) {
+    const card = invalid.closest(".question-card");
+    if (card) {
+      activeEditorQuestion =
+        draft.rounds[card.dataset.ri].questions[card.dataset.qi];
+      showStudioSelection();
+      const details = invalid.closest("details");
+      if (details) details.open = true;
+    } else if (invalid.closest("#quizSettings")) $("#quizSettings").open = true;
+    invalid.reportValidity();
+    return;
+  }
   collectDraft();
   if (draft.rounds.some((r) => !r.questions.length)) {
     draft.rounds = draft.rounds.filter((r) => r.questions.length);
@@ -1109,6 +1303,9 @@ function renderEnded(rows) {
 function renderPlayers() {
   if (!game || participantMode) return;
   $("#playerCount").textContent = game.participants.length;
+  $("#liveAnswerMeter").textContent = game.participants.filter(
+    (p) => p.answered,
+  ).length;
   $("#answeredCount").textContent =
     game.status === "question"
       ? `${game.participants.filter((p) => p.answered).length} / ${game.participants.length} answered`
@@ -1480,6 +1677,7 @@ function moveQuestions(selection, target) {
   for (const item of [...moving].sort((a, b) => b.ri - a.ri || b.qi - a.qi))
     draft.rounds[item.ri].questions.splice(item.qi, 1);
   destination.questions.push(...moving.map((s) => s.q));
+  activeEditorQuestion = moving.at(-1).q;
   dirty = true;
   renderEditor();
 }
@@ -1570,7 +1768,10 @@ function fitLiveScreen() {
   const surface = participantMode ? $(".participant-card") : $(".game-stage");
   root.style.setProperty("--live-question", "40px");
   root.style.setProperty("--live-option", "24px");
-  root.style.setProperty("--live-media", "200px");
+  const mediaSize = participantMode
+    ? 200
+    : Math.min(440, Math.max(200, innerHeight * 0.42));
+  root.style.setProperty("--live-media", `${mediaSize}px`);
   root.style.setProperty("--live-gap", "14px");
   if (
     game.status === "ended" ||
@@ -1585,7 +1786,7 @@ function fitLiveScreen() {
     root.style.setProperty("--live-option", `${Math.max(16, 24 - step)}px`);
     root.style.setProperty(
       "--live-media",
-      `${Math.max(72, 200 - step * 12)}px`,
+      `${Math.max(72, mediaSize - step * 24)}px`,
     );
     root.style.setProperty("--live-gap", `${Math.max(6, 14 - step)}px`);
     if (surface.scrollHeight <= surface.clientHeight + 2) break;
@@ -1616,3 +1817,8 @@ $("#fullscreenGame").onclick = async () => {
     );
   }
 };
+// Font loading can change Gujarati line wrapping; refit without clipping the question.
+if (document.fonts) {
+  document.fonts.ready.then(scheduleLiveFit);
+  document.fonts.addEventListener("loadingdone", scheduleLiveFit);
+}

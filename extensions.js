@@ -4,7 +4,8 @@
   let resultForExport = null,
     publicState = null,
     publicationRows = [],
-    extendId = null;
+    extendId = null,
+    publishQuizId = null;
   async function copyLink(url) {
     try {
       await navigator.clipboard.writeText(url);
@@ -26,6 +27,8 @@
       extendId = null;
       $("#extendDialog").close();
       $("#publicationDialog").close();
+      $("#assignDialog").close();
+      publishQuizId = null;
       return;
     }
     try {
@@ -36,10 +39,10 @@
         ? rows
             .map(
               (p) =>
-                `<article class="publication-card"><div><b>${e(p.title)}</b><p>${Date.now() < p.closes ? "Open until" : "Closed"} ${e(new Date(p.closes).toLocaleString())} · ${p.participants}/100 attempts</p><input readonly aria-label="Published quiz link" value="${e(location.origin + "/play?quiz=" + p.id)}"></div><div class="button-row"><button class="secondary-btn" data-copy-publication="${p.id}">Copy link</button><button class="secondary-btn" data-publication-results="${p.id}">View results</button>${Date.now() < p.closes ? `<button class="secondary-btn" data-extend-publication="${p.id}">Extend time</button><button class="text-btn" data-close-publication="${p.id}">Close now</button>` : `<button class="text-btn" data-delete-publication="${p.id}">Delete results</button>`}</div></article>`,
+                `<article class="publication-card"><div><b>${e(p.title)}</b><p>${Date.now() < p.closes ? "Open until" : "Closed"} ${e(new Date(p.closes).toLocaleString())} · ${p.participants}/100 attempts · ${p.settings?.timerEnabled ? "Timed" : "Untimed"}${p.settings?.randomizeAnswers ? " · Shuffled answers" : ""}</p><input readonly aria-label="Published quiz link" value="${e(location.origin + "/play?quiz=" + p.id)}"></div><div class="button-row"><button class="secondary-btn" data-copy-publication="${p.id}">Copy link</button><button class="secondary-btn" data-publication-results="${p.id}">View results</button>${Date.now() < p.closes ? `<button class="secondary-btn" data-extend-publication="${p.id}">Extend time</button><button class="text-btn" data-close-publication="${p.id}">Close now</button>` : `<button class="text-btn" data-delete-publication="${p.id}">Delete results</button>`}</div></article>`,
             )
             .join("")
-        : '<p class="muted">Choose Publish 24h on a saved quiz to create your first link.</p>';
+        : '<p class="muted">Choose Assign quiz on a saved quiz to create your first link.</p>';
     } catch (err) {
       $("#publicationList").textContent = err.message;
     }
@@ -71,21 +74,20 @@
     if (!b) return;
     try {
       if (b.dataset.publish) {
-        if (
-          !requireHost() ||
-          !confirm(
-            "Publish a snapshot of this quiz for 24 hours? Anyone with the link can attempt it once per browser. Correct answers and points appear after each submission. Finished participants can see a leaderboard of completed attempts.",
-          )
+        if (!requireHost()) return;
+        publishQuizId = b.dataset.publish;
+        $("#assignQuizTitle").textContent =
+          quizzes.find((q) => q.id === publishQuizId)?.title || "Saved quiz";
+        const date = new Date(Date.now() + 86400000);
+        $("#assignDeadline").value = new Date(
+          date.getTime() - date.getTimezoneOffset() * 60000,
         )
-          return;
-        b.disabled = true;
-        const p = await api("/api/publications", {
-          method: "POST",
-          body: JSON.stringify({ quizId: b.dataset.publish }),
-        });
-        await publications();
-        await copyLink(location.origin + p.path);
-        $("#publicationList").scrollIntoView({ behavior: "smooth" });
+          .toISOString()
+          .slice(0, 16);
+        $("#assignTimer").checked = false;
+        $("#assignShuffle").checked = false;
+        $("#assignStatus").textContent = "";
+        $("#assignDialog").showModal();
       }
       if (b.dataset.copyPublication)
         await copyLink(
@@ -151,6 +153,36 @@
       if (b.dataset.publish) b.disabled = false;
     }
   });
+  for (const id of ["#closeAssign", "#cancelAssign"])
+    $(id).onclick = () => $("#assignDialog").close();
+  $("#assignForm").onsubmit = async (event) => {
+    event.preventDefault();
+    if (!publishQuizId || !requireHost()) return;
+    const button = $("button[type=submit]", event.target),
+      ownerId = account.id;
+    button.disabled = true;
+    try {
+      const p = await api("/api/publications", {
+        method: "POST",
+        body: JSON.stringify({
+          quizId: publishQuizId,
+          closes: new Date($("#assignDeadline").value).getTime(),
+          timerEnabled: $("#assignTimer").checked,
+          randomizeAnswers: $("#assignShuffle").checked,
+        }),
+      });
+      if (account?.id !== ownerId) return;
+      $("#assignDialog").close();
+      await publications();
+      await copyLink(location.origin + p.path);
+      $("#publicationList").scrollIntoView({ behavior: "smooth" });
+      showToast("Assignment created. Share the participant link.");
+    } catch (err) {
+      $("#assignStatus").textContent = err.message;
+    } finally {
+      button.disabled = false;
+    }
+  };
   $("#closeExtendDialog").onclick = () => $("#extendDialog").close();
   $("#extendPublicationForm").onsubmit = async (event) => {
     event.preventDefault();
@@ -305,7 +337,9 @@
       polling = false,
       submitting = false,
       actionRevision = 0,
-      feedbackIndex = null;
+      feedbackIndex = null,
+      publishedClockOffset = 0,
+      timerRetryAt = 0;
     function soundStatus() {
       const button = $("#enablePublishedSound"),
         status = $("#publishedSoundStatus");
@@ -361,12 +395,14 @@
           !publicState ||
           state.closed ||
           state.attempt?.completed ||
+          state.awaitingNext !== publicState?.awaitingNext ||
           state.attempt?.cursor !== publicState.attempt?.cursor ||
           state.attempt?.completed !== publicState.attempt?.completed
         )
           render(state);
         else {
           publicState = state;
+          publishedClockOffset = state.serverNow - Date.now();
           const deadline = $(".publication-deadline", $("#independentApp"));
           if (deadline)
             deadline.textContent =
@@ -424,6 +460,8 @@
       $$("#independentApp audio").forEach((audio) => audio.pause());
       sound.resetDuck();
       publicState = state;
+      publishedClockOffset = state.serverNow - Date.now();
+      if (state.awaitingNext) feedbackIndex = state.attempt.cursor - 1;
       const a = state.attempt,
         q = state.question;
       let content = "";
@@ -432,23 +470,28 @@
           ? `<h2>Your result: ${a.score} points</h2><p>${e(a.name)} · ${a.cursor}/${state.total} questions submitted</p>${completedLeaderboard(state)}${state.solutions.map((s, i) => `<details class="solution"><summary>${i + 1}. ${e(s.text)} · ${s.pointsEarned} pts</summary>${solutionHTML(s)}</details>`).join("")}`
           : "<h2>This quiz has closed</h2><p>The host is no longer accepting attempts.</p>";
       } else if (!a) {
-        content = `<h2>Play at your own pace</h2><p>${state.total} questions · ${state.rounds} rounds. No speed bonus or per-question countdown. Submit before the closing time.</p><form id="publishedJoin"><label>Your nickname<input name="name" required maxlength="30" autocomplete="nickname"></label><button class="primary-btn" type="submit">Start my attempt</button></form><p class="muted">One attempt per browser, using a cookie. Clearing cookies or using another browser can bypass this limit; it does not verify identity. Correct answers and points appear immediately after each submission. Your nickname and score appear to other finishers on the leaderboard.</p>`;
+        content = `<h2>Play at your own pace</h2><p>${state.total} questions · ${state.rounds} rounds. ${state.settings?.timerEnabled ? "Each question has a countdown, which continues if you leave the page. The next question starts only when you press Next." : "No per-question countdown."} No speed bonus. Submit before the closing time.</p><form id="publishedJoin"><label>Your nickname<input name="name" required maxlength="30" autocomplete="nickname"></label><button class="primary-btn" type="submit">Start my attempt</button></form><p class="muted">One attempt per browser, using a cookie. Clearing cookies or using another browser can bypass this limit; it does not verify identity. Correct answers and points appear immediately after each submission. Your nickname and score appear to other finishers on the leaderboard.</p>`;
       } else if (feedbackIndex !== null && state.solutions?.[feedbackIndex]) {
         const s = state.solutions[feedbackIndex];
-        content = `<section class="answer-feedback" aria-labelledby="feedbackHeading"><div class="eyebrow">QUESTION ${feedbackIndex + 1} / ${state.total} · ANSWER SAVED</div><h2 id="feedbackHeading">${s.credit === 1 ? "Correct!" : s.credit > 0 ? "Partially correct" : s.yourAnswer === null ? "Question skipped" : "Not quite this time"}</h2><h3>${e(s.text)}</h3>${solutionHTML(s)}<p>Total so far: <b>${a.score.toLocaleString()} points</b></p><button id="nextPublished" class="primary-btn">${a.completed ? "See my results & leaderboard" : "Next question →"}</button></section>`;
+        content = `<section class="answer-feedback" aria-labelledby="feedbackHeading"><div class="eyebrow">QUESTION ${feedbackIndex + 1} / ${state.total} · ANSWER SAVED</div><h2 id="feedbackHeading">${s.timedOut ? "Time’s up" : s.credit === 1 ? "Correct!" : s.credit > 0 ? "Partially correct" : s.yourAnswer === null ? "Question skipped" : "Not quite this time"}</h2><h3>${e(s.text)}</h3>${solutionHTML(s)}<p>Total so far: <b>${a.score.toLocaleString()} points</b></p><button id="nextPublished" class="primary-btn">${a.completed ? "See my results & leaderboard" : "Next question →"}</button></section>`;
       } else if (a.completed) {
         content = `<h2>All done, ${e(a.name)}!</h2><p class="final-score">${a.score.toLocaleString()} <span>points</span></p>${completedLeaderboard(state)}<button id="refreshAttempt" class="secondary-btn">Refresh results</button><details class="answer-review"><summary>Review your answers</summary>${state.solutions.map((s, i) => `<details class="solution"><summary>${i + 1}. ${e(s.text)} · ${s.pointsEarned} pts</summary>${solutionHTML(s)}</details>`).join("")}</details>`;
       } else {
-        content = `<div class="eyebrow">${e(q.round)} · QUESTION ${q.index + 1}/${state.total}</div><h2>${e(q.text)}</h2>${mediaHTML(q.media, q.mediaType)}<form id="publishedAnswer">${q.type === "text" ? '<label>Your answer<input name="answer" required maxlength="200" autocomplete="off"></label>' : `<p>${q.type === "multi" ? "Select all correct options. Correct selections earn proportional points; wrong selections subtract proportional points. Minimum zero." : "Choose one answer."}</p><div class="async-options">${q.options.map((o, i) => `<label><input type="${q.type === "multi" ? "checkbox" : "radio"}" name="option" value="${i}" ${q.type === "multi" ? "" : "required"}><span>${e(o)}</span></label>`).join("")}</div>`}<div class="button-row"><button class="primary-btn" type="submit">Submit answer</button><button class="text-btn" id="skipPublished" type="button">Skip question</button></div></form><p class="muted">Submitted answers cannot be changed. Your progress is saved after each submission.</p>`;
+        content = `${q.deadline ? '<div class="async-timer" role="timer" id="asyncTimer"></div>' : ""}<div class="eyebrow">${e(q.round)} · QUESTION ${q.index + 1}/${state.total}</div><h2>${e(q.text)}</h2>${mediaHTML(q.media, q.mediaType)}<form id="publishedAnswer">${q.type === "text" ? '<label>Your answer<input name="answer" required maxlength="200" autocomplete="off"></label>' : `<p>${q.type === "multi" ? "Select all correct options. Correct selections earn proportional points; wrong selections subtract proportional points. Minimum zero." : "Choose one answer."}</p><div class="async-options">${q.options.map((o, i) => `<label><input type="${q.type === "multi" ? "checkbox" : "radio"}" name="option" value="${i}" ${q.type === "multi" ? "" : "required"}><span>${e(o)}</span></label>`).join("")}</div>`}<div class="button-row"><button class="primary-btn" type="submit">Submit answer</button><button class="text-btn" id="skipPublished" type="button">Skip question</button></div></form><p class="muted">Submitted answers cannot be changed. Your progress is saved after each submission.</p>`;
       }
       $("#independentApp").innerHTML =
         `<div class="independent-brand">Quizzes <span>ON YOUR TIME</span></div><section class="panel"><div class="eyebrow">${state.closed ? "CLOSED" : "SELF-PACED QUIZ"}</div><h1>${e(state.title)}</h1><p>${e(state.description || "")}</p><p class="publication-deadline">${state.closed ? "Closed" : "Closes"} ${e(new Date(state.closes).toLocaleString())}</p>${state.music && !state.closed && !a?.completed ? `<div class="publication-music"><button type="button" class="secondary-btn" id="enablePublishedSound">Enable sound</button><small id="publishedSoundStatus"></small></div>` : ""}${content}<p id="attemptStatus" role="status"></p></section>`;
       syncMusic(state);
+      tickPublishedTimer();
       if ($("#nextPublished"))
         $("#nextPublished").onclick = () => {
-          feedbackIndex = null;
-          render(publicState);
-          window.scrollTo(0, 0);
+          if (publicState.awaitingNext)
+            action("/next", { index: publicState.attempt.cursor });
+          else {
+            feedbackIndex = null;
+            render(publicState);
+            window.scrollTo(0, 0);
+          }
         };
       if ($("#enablePublishedSound"))
         $("#enablePublishedSound").onclick = () => {
@@ -507,6 +550,30 @@
         $$("#independentApp button").forEach((b) => (b.disabled = false));
       }
     }
+    function tickPublishedTimer() {
+      const timer = $("#asyncTimer"),
+        q = publicState?.question;
+      if (
+        !timer ||
+        !q?.deadline ||
+        publicState.closed ||
+        feedbackIndex !== null
+      )
+        return;
+      const remaining = Math.max(
+        0,
+        Math.ceil((q.deadline - Date.now() - publishedClockOffset) / 1000),
+      );
+      timer.textContent = remaining
+        ? `${remaining}s remaining`
+        : "Time is up — saving…";
+      timer.classList.toggle("urgent", remaining <= 5);
+      if (!remaining && !submitting && Date.now() >= timerRetryAt) {
+        timerRetryAt = Date.now() + 5000;
+        action("/answer", { index: q.index, skip: true });
+      }
+    }
+    setInterval(tickPublishedTimer, 250);
     refresh();
     // Metadata-only refresh preserves unsubmitted answers and notices extensions/early closing.
     setInterval(() => {

@@ -12,6 +12,7 @@ const columns = {
   ownership: ["kind", "item_id", "owner_id"],
   invitations: ["digest", "owner_id", "expires", "used"],
   publications: ["id", "owner_id", "document", "created", "closes"],
+  editor_drafts: ["owner_id", "draft_key", "version", "updated", "document"],
   attempts: [
     "id",
     "publication_id",
@@ -30,7 +31,7 @@ const columns = {
   );
   if (
     snapshot.format !== "quizzes-backup" ||
-    ![1, 2].includes(snapshot.version) ||
+    ![1, 2, 3].includes(snapshot.version) ||
     !snapshot.tables
   )
     throw Error("Unsupported backup format.");
@@ -42,6 +43,7 @@ const columns = {
       "attempts",
     ])
       snapshot.tables[table] = [];
+  if (snapshot.version < 3) snapshot.tables.editor_drafts = [];
   for (const table of TABLES) {
     if (!Array.isArray(snapshot.tables[table]))
       throw Error("Missing backup table.");

@@ -408,7 +408,9 @@ test(
             visitor,
           );
           assert.equal(join.value.question.correctAnswers, undefined);
-          assert.equal(join.value.attempt.score, undefined);
+          assert.equal(join.value.attempt.score, 0);
+          assert.deepEqual(join.value.solutions, []);
+          assert.equal(join.value.leaderboard, undefined);
           const responses = await Promise.all([
             req(
               "/api/published/" + pub.id + "/answer",
@@ -448,8 +450,11 @@ test(
             visitor,
           );
           assert.equal(resume.value.question.index, 1);
-          assert.equal(resume.value.attempt.score, undefined);
-          assert.equal(resume.value.solutions, undefined);
+          assert.ok(resume.value.attempt.score >= 500);
+          assert.equal(resume.value.solutions.length, 1);
+          assert.equal(resume.value.solutions[0].correct, "2 + 3");
+          assert.equal(resume.value.question.correct, undefined);
+          assert.equal(resume.value.leaderboard, undefined);
           const finish = await req(
             "/api/published/" + pub.id + "/answer",
             "POST",
@@ -457,8 +462,21 @@ test(
             visitor,
           );
           assert.equal(finish.value.attempt.completed, true);
-          assert.equal(finish.value.solutions, undefined);
-          assert.equal(finish.value.attempt.score, undefined);
+          assert.equal(finish.value.solutions.length, 2);
+          assert.ok(finish.value.attempt.score >= 1500);
+          assert.equal(finish.value.leaderboard.length, 1);
+          assert.deepEqual(Object.keys(finish.value.leaderboard[0]).sort(), [
+            "isYou",
+            "name",
+            "rank",
+            "score",
+          ]);
+          assert.equal(finish.value.leaderboard[0].isYou, true);
+          assert.equal(finish.value.leaderboard[0].rank, 1);
+          assert.equal(
+            (await req("/api/published/" + pub.id)).value.leaderboard,
+            undefined,
+          );
           assert.equal(
             (
               await req(
@@ -884,8 +902,8 @@ test(
           ).value;
           assert.equal(progress.closes, fresh.closes + 86400000);
           assert.equal(progress.attempt.cursor, 1);
-          assert.equal(progress.attempt.score, undefined);
-          assert.equal(progress.solutions, undefined);
+          assert.equal(progress.attempt.score, 500);
+          assert.equal(progress.solutions.length, 1);
           assert.equal(
             (
               await req(
@@ -904,7 +922,7 @@ test(
           ).value;
           assert.equal(resumed.closes, fresh.closes + 86400000);
           assert.equal(resumed.attempt.cursor, 1);
-          assert.equal(resumed.solutions, undefined);
+          assert.equal(resumed.solutions.length, 1);
           await Promise.all([
             req(
               "/api/publications/" + fresh.id + "/extend",
@@ -982,6 +1000,163 @@ test(
           assert.equal(
             (await req("/api/published/" + fresh.id)).res.status,
             404,
+          );
+        },
+      );
+      await t.test(
+        "immediate feedback, completed-only rankings, shared ranks and private answer history",
+        async () => {
+          const created = await req(
+            "/api/quizzes",
+            "POST",
+            {
+              title: "Instant feedback",
+              description: "",
+              music: "",
+              rounds: [
+                {
+                  title: "",
+                  questions: [
+                    {
+                      type: "choice",
+                      text: "Choose A",
+                      options: ["A", "B"],
+                      correct: 0,
+                      seconds: 30,
+                      points: 1000,
+                      media: "",
+                    },
+                    {
+                      type: "text",
+                      text: "Type hello",
+                      accepted: ["hello"],
+                      seconds: 30,
+                      points: 1000,
+                      media: "",
+                    },
+                  ],
+                },
+              ],
+            },
+            owner,
+          );
+          assert.equal(created.res.status, 201);
+          const publication = (
+            await req(
+              "/api/publications",
+              "POST",
+              { quizId: created.value.id },
+              owner,
+            )
+          ).value;
+          const path = "/api/published/" + publication.id;
+          async function join(name) {
+            const initial = await req(path);
+            const r = await req(
+              path + "/join",
+              "POST",
+              { name },
+              initial.cookie,
+            );
+            assert.equal(r.value.question.correct, undefined);
+            assert.deepEqual(r.value.solutions, []);
+            assert.equal(r.value.leaderboard, undefined);
+            return initial.cookie;
+          }
+          const alice = await join("Alice"),
+            bob = await join("Bob"),
+            unfinished = await join("Still playing"),
+            skipped = await join("Skipped");
+          const first = (
+            await req(path + "/answer", "POST", { index: 0, answer: 0 }, alice)
+          ).value;
+          assert.equal(first.solutions.length, 1);
+          assert.equal(first.solutions[0].correct, "A");
+          assert.equal(first.solutions[0].pointsEarned, 1000);
+          assert.equal(first.question.accepted, undefined);
+          assert.equal(first.leaderboard, undefined);
+          const finished = (
+            await req(
+              path + "/answer",
+              "POST",
+              { index: 1, answer: " HELLO " },
+              alice,
+            )
+          ).value;
+          assert.equal(finished.attempt.score, 2000);
+          assert.equal(finished.solutions[1].correct, "hello");
+          assert.equal(finished.leaderboard.length, 1);
+          await req(path + "/answer", "POST", { index: 0, answer: 0 }, bob);
+          await req(
+            path + "/answer",
+            "POST",
+            { index: 1, answer: "hello" },
+            bob,
+          );
+          const wrong = (
+            await req(
+              path + "/answer",
+              "POST",
+              { index: 0, answer: 1 },
+              skipped,
+            )
+          ).value;
+          assert.equal(wrong.solutions[0].pointsEarned, 0);
+          const skip = (
+            await req(
+              path + "/answer",
+              "POST",
+              { index: 1, skip: true },
+              skipped,
+            )
+          ).value;
+          assert.equal(skip.solutions[1].yourAnswer, null);
+          assert.equal(skip.solutions[1].correct, "hello");
+          const ranked = (await req(path, "GET", undefined, alice)).value;
+          assert.deepEqual(
+            ranked.leaderboard.map((r) => [r.rank, r.score]),
+            [
+              [1, 2000],
+              [1, 2000],
+              [3, 0],
+            ],
+          );
+          assert.equal(ranked.leaderboard.filter((r) => r.isYou).length, 1);
+          for (const row of ranked.leaderboard)
+            assert.deepEqual(Object.keys(row).sort(), [
+              "isYou",
+              "name",
+              "rank",
+              "score",
+            ]);
+          assert.ok(
+            !ranked.leaderboard.some((r) => r.name === "Still playing"),
+          );
+          assert.equal(
+            (await req(path, "GET", undefined, unfinished)).value.leaderboard,
+            undefined,
+          );
+          assert.equal((await req(path)).value.leaderboard, undefined);
+          assert.equal((await req(path)).value.solutions, undefined);
+          await stop();
+          await start();
+          assert.deepEqual(
+            (await req(path, "GET", undefined, alice)).value.leaderboard,
+            ranked.leaderboard,
+          );
+          await req(
+            "/api/publications/" + publication.id + "/close",
+            "POST",
+            {},
+            owner,
+          );
+          assert.equal(
+            (await req(path, "GET", undefined, alice)).value.leaderboard.length,
+            3,
+          );
+          assert.equal(
+            (await req(path, "GET", undefined, unfinished)).value.leaderboard,
+            undefined,
           );
         },
       );

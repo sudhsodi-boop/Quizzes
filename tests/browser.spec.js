@@ -139,6 +139,29 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     "Which option is correct?",
   );
   await expect(player.locator("#playerMedia img")).toBeVisible();
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await expect
+    .poll(() =>
+      page
+        .locator(".game-stage")
+        .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+    )
+    .toBe(true);
+  await expect
+    .poll(() =>
+      player
+        .locator(".participant-card")
+        .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+    )
+    .toBe(true);
+  await page.screenshot({
+    path: "test-artifacts/v07-host-question-1366.png",
+    fullPage: false,
+  });
+  await player.screenshot({
+    path: "test-artifacts/v07-player-question-mobile.png",
+    fullPage: false,
+  });
   await player.getByRole("button", { name: "A First option" }).click();
   await expect(player.locator("#answerStatus")).toContainText(
     "Answer locked in",
@@ -151,6 +174,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   );
   await page.reload();
   await expect(page.locator("#gameModal")).toBeVisible();
+  await expect(page.locator("#hostQuestion")).toHaveText(
+    "Which option is correct?",
+  );
+  await expect(page.locator("#hostOptions .is-correct")).toHaveCount(1);
   await page.getByRole("button", { name: "Next question" }).click();
   await expect(player.locator("#playerTitle")).toHaveText("Everyone can help.");
   await expect(player.locator("#playerMedia audio")).toBeVisible();
@@ -548,21 +575,40 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     )
     .toBe(true);
 
-  await asyncPlayer.getByRole("button", { name: "Submit & continue" }).click();
+  await asyncPlayer.getByRole("button", { name: "Submit answer" }).click();
+  await expect(asyncPlayer.locator(".answer-feedback")).toContainText(
+    "Correct answers:",
+  );
+  await expect(asyncPlayer.locator(".answer-feedback")).toContainText("500");
+  await expect(asyncPlayer.locator("#publishedAnswer")).toHaveCount(0);
+  await asyncPlayer.getByRole("button", { name: "Next question" }).click();
   await asyncPlayer.reload();
   await expect(
     asyncPlayer.getByRole("heading", { name: "Choose True or False." }),
   ).toBeVisible();
   await asyncPlayer.getByLabel("False", { exact: true }).check();
-  await asyncPlayer.getByRole("button", { name: "Submit & continue" }).click();
+  await asyncPlayer.getByRole("button", { name: "Submit answer" }).click();
+  await expect(asyncPlayer.locator(".answer-feedback")).toContainText(
+    "Correct answer:",
+  );
+  await asyncPlayer.clock.fastForward(30001);
+  await expect(asyncPlayer.locator(".answer-feedback")).toBeVisible();
+  await asyncPlayer
+    .getByRole("button", { name: "See my results & leaderboard" })
+    .click();
+  await expect(asyncPlayer.locator(".completed-leaderboard")).toContainText(
+    "After-school participant",
+  );
   await expect(
     asyncPlayer.getByRole("heading", {
       name: "All done, After-school participant!",
     }),
   ).toBeVisible();
-  await expect(asyncPlayer.locator("#independentApp")).not.toContainText(
-    "1500",
-  );
+  await expect(asyncPlayer.locator(".final-score")).toContainText("1,500");
+  await asyncPlayer.screenshot({
+    path: "test-artifacts/v07-self-paced-leaderboard.png",
+    fullPage: true,
+  });
   await publication.getByRole("button", { name: "View results" }).click();
   await expect(page.locator("#publicationResults")).toContainText(
     "After-school participant",
@@ -620,9 +666,21 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(player.locator("#playerRound")).toContainText("Last question");
   await page.locator("#toggleLeaderboard").click();
   await expect(player.locator("#playerLeaderboard")).toBeVisible();
-  await expect(player.locator("#playerOptions button").first()).toBeEnabled();
+  await expect(player.locator("#playerOptions")).toBeHidden();
+  await expect(player.locator("#playerTitle")).toBeHidden();
+  await expect(player.locator("#answerStatus")).toBeHidden();
+  await expect(page.locator("#hostLeaderboard")).toBeHidden();
+  await expect(page.locator("#hostQuestion")).toBeVisible();
+  await player.screenshot({
+    path: "test-artifacts/v07-live-leaderboard-mobile.png",
+    fullPage: true,
+  });
+  await player.reload();
+  await expect(player.locator("#playerLeaderboard")).toBeVisible();
+  await expect(player.locator("#playerTitle")).toBeHidden();
   await page.locator("#toggleLeaderboard").click();
   await expect(player.locator("#playerLeaderboard")).toBeHidden();
+  await expect(player.locator("#playerOptions")).toBeVisible();
   await player.locator("#playerOptions button").nth(0).click();
   await player.locator("#playerOptions button").nth(2).click();
   await player.locator("#submitMulti").click();
@@ -722,6 +780,165 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(
     asyncPlayer.getByRole("heading", { name: "Unable to open quiz" }),
   ).toBeVisible();
+  // v0.7 real six-option, image question across desktop, tablet and phone viewports.
+  await page.evaluate(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 640;
+    canvas.height = 240;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#eef4ff";
+    ctx.fillRect(0, 0, 640, 240);
+    ctx.fillStyle = "#3566bc";
+    ctx.font = "bold 72px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("2   3   5   7", 320, 145);
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/png"),
+    );
+    const uploaded = await fetch("/api/media", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": "Numbers.png",
+      },
+      body: blob,
+    }).then((r) => r.json());
+    const q = {
+      title: "Community challenge",
+      description: "Six answers, one clear screen",
+      music: "",
+      rounds: [
+        {
+          title: "Numbers & patterns",
+          questions: [
+            {
+              type: "multi",
+              text: "Look at the numbers in the picture. Which of the following numbers are prime?",
+              options: ["Two", "Three", "Four", "Five", "Six", "Seven"],
+              correctAnswers: [0, 1, 3, 5],
+              seconds: 120,
+              points: 1000,
+              media: uploaded.url,
+              mediaType: uploaded.mime,
+            },
+          ],
+        },
+      ],
+    };
+    const response = await fetch("/api/quizzes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(q),
+    });
+    if (!response.ok) throw Error("Could not create layout fixture");
+  });
+  await page.reload();
+  await page.locator('.nav-item[data-view="quizzes"]').click();
+  await page
+    .locator(".library-card")
+    .filter({ hasText: "Community challenge" })
+    .getByRole("button", { name: "Host game" })
+    .click();
+  await expect(page.locator("#hostCode")).toHaveText(/^QZ[A-F0-9]{6}$/);
+  const layoutCode = await page.locator("#hostCode").textContent();
+  await player.goto("/join?code=" + layoutCode);
+  await player.getByLabel("Your nickname").fill("Layout player");
+  await player.getByRole("button", { name: "Join game" }).click();
+  await expect(page.locator("#playerCount")).toHaveText("1");
+  await page.getByRole("button", { name: "Start question" }).click();
+  await expect(player.locator("#playerOptions button")).toHaveCount(6);
+  for (const viewport of [
+    { width: 1366, height: 768 },
+    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+    { width: 1024, height: 768 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expect
+      .poll(
+        () =>
+          page
+            .locator(".game-stage")
+            .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+        { message: JSON.stringify(viewport) },
+      )
+      .toBe(true);
+    await expect
+      .poll(() =>
+        page
+          .locator(".game-room")
+          .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+      )
+      .toBe(true);
+    expect(
+      await page
+        .locator("#hostQuestion")
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+    ).toBeGreaterThanOrEqual(20);
+    await page.screenshot({
+      path: `test-artifacts/v07-host-six-options-${viewport.width}.png`,
+      fullPage: false,
+    });
+  }
+  await expect
+    .poll(() =>
+      player
+        .locator(".participant-card")
+        .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+    )
+    .toBe(true);
+  await player.screenshot({
+    path: "test-artifacts/v07-player-six-options-mobile.png",
+    fullPage: false,
+  });
+  for (const viewport of [
+    { width: 1366, height: 768 },
+    { width: 768, height: 1024 },
+  ]) {
+    await player.setViewportSize(viewport);
+    await expect
+      .poll(() =>
+        player
+          .locator(".participant-card")
+          .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
+      )
+      .toBe(true);
+  }
+  await page.locator("#toggleLeaderboard").click();
+  await expect(player.locator("#playerLeaderboard")).toBeVisible();
+  await expect(player.locator("#playerMedia")).toBeHidden();
+  await expect(player.locator("#submitMulti")).toBeHidden();
+  await expect(page.locator("#hostMedia")).toBeVisible();
+  await expect(page.locator("#hostLeaderboard")).toBeHidden();
+  // Long content and browser zoom preserve access instead of clipping text.
+  await page.evaluate(() => {
+    document.querySelector("#hostQuestion").textContent =
+      "A very long question with essential information. ".repeat(20);
+    document
+      .querySelectorAll("#hostOptions .answer-copy")
+      .forEach(
+        (el) =>
+          (el.textContent =
+            "A detailed answer option with important context. ".repeat(5)),
+      );
+    window.dispatchEvent(new Event("resize"));
+  });
+  await page.setViewportSize({ width: 683, height: 384 });
+  await expect
+    .poll(() =>
+      page
+        .locator(".game-stage")
+        .evaluate((el) => el.scrollHeight > el.clientHeight),
+    )
+    .toBe(true);
+  expect(
+    await page
+      .locator(".game-stage")
+      .evaluate((el) => getComputedStyle(el).overflowY),
+  ).toBe("auto");
+  await page.locator("#endGame").click();
+  await expect(page.locator("#nextQuestion")).toBeDisabled();
+  await expect(page.locator("#hostResults .leaderboard")).toHaveCount(0);
   await asyncContext.close();
   await friendContext.close();
   expect(errors).toEqual([]);

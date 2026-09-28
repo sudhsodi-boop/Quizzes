@@ -243,7 +243,9 @@ test(
           assert.equal(uploaded.res.status, 201);
           media = uploaded.value.url;
           assert.equal(
-            (await fetch(origin + media, {headers:{Cookie:cookie}})).headers.get("content-type"),
+            (
+              await fetch(origin + media, { headers: { Cookie: cookie } })
+            ).headers.get("content-type"),
             "image/png",
           );
           const quiz = {
@@ -345,6 +347,8 @@ test(
           assert.equal(result.correct, "4");
           assert.ok(result.leaderboard[0].score >= 500);
           host.send("next_question");
+          await player.wait("last_question_intro");
+          host.send("next_question");
           const tf = await player.wait("question_started");
           assert.equal(tf.question.type, "boolean");
           player.send("submit_answer", {
@@ -376,7 +380,12 @@ test(
             "results",
           );
           host.send("next_question");
-          assert.match((await player.wait("round_intro")).game.upcomingRound,/Round 2/);
+          assert.match(
+            (await player.wait("round_intro")).game.upcomingRound,
+            /Round 2/,
+          );
+          host.send("next_question");
+          await player.wait("last_question_intro");
           host.send("next_question");
           const q = await player.wait("question_started");
           assert.equal(q.question.type, "text");
@@ -465,7 +474,11 @@ test(
               (r) => r.id === reportId,
             ),
           );
-          assert.equal((await fetch(origin + media, {headers:{Cookie:cookie}})).status, 200);
+          assert.equal(
+            (await fetch(origin + media, { headers: { Cookie: cookie } }))
+              .status,
+            200,
+          );
         },
       );
       await t.test(

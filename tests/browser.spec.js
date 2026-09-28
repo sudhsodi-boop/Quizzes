@@ -1,5 +1,21 @@
 const { test, expect } = require("@playwright/test");
 const crypto = require("crypto");
+// Legacy game regressions proceed past the new host-controlled last-question notice.
+// The professional workflow below explicitly tests the announcement on all screens.
+async function advanceHost(page, expectedLabel) {
+  if (expectedLabel)
+    await expect(
+      page.getByRole("button", { name: expectedLabel }),
+    ).toBeVisible();
+  const before = await page.evaluate(() => game.status);
+  await page.locator("#nextQuestion").click();
+  await expect.poll(() => page.evaluate(() => game.status)).not.toBe(before);
+  if (await page.evaluate(() => game.status === "last_question_intro")) {
+    await page.getByRole("button", { name: "Start last question" }).click();
+    await expect.poll(() => page.evaluate(() => game.status)).toBe("question");
+  }
+}
+
 test("Host editor and a separate mobile player complete a saved multimedia quiz", async ({
   page,
   browser,
@@ -150,7 +166,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .toBe(true);
 
   await expect(page.locator("#playerCount")).toHaveText("1");
-  await page.getByRole("button", { name: "Start question" }).click();
+  await advanceHost(page, "Start question");
   await expect(player.locator("#playerTitle")).toHaveText(
     "Which option is correct?",
   );
@@ -204,7 +220,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     "Which option is correct?",
   );
   await expect(page.locator("#hostOptions .is-correct")).toHaveCount(1);
-  await page.getByRole("button", { name: "Next question" }).click();
+  await advanceHost(page, "Next question");
   await expect(player.locator("#playerTitle")).toHaveText("Everyone can help.");
   await expect(player.locator("#playerMedia audio")).toBeVisible();
   await player.locator("#playerMedia audio").evaluate((audio) => audio.play());
@@ -216,9 +232,9 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await player.getByRole("button", { name: "A True" }).click();
   await page.getByRole("button", { name: "Reveal answers" }).click();
   await expect(page.getByRole("button", { name: "Next round" })).toBeVisible();
-  await page.getByRole("button", { name: "Next round" }).click();
+  await advanceHost(page, "Next round");
   await expect(player.locator("#playerTitle")).toContainText("Round 2");
-  await page.getByRole("button", { name: "Start this round" }).click();
+  await advanceHost(page, "Start this round");
   await expect(player.locator("#textAnswerForm")).toBeVisible();
   await player.locator("#textAnswer").fill("  STRONGER  ");
   await player.getByRole("button", { name: "Lock in answer" }).click();
@@ -460,7 +476,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     animations: "disabled",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Start question" }).click();
+  await advanceHost(page, "Start question");
   await expect(player.locator("#playerOptions button")).toHaveCount(4);
   expect(await player.evaluate(() => QuizzesSound.status().phase)).toBe(
     "question",
@@ -484,7 +500,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   expect(await player.evaluate(() => QuizzesSound.status().phase)).toBe(
     "results",
   );
-  await page.getByRole("button", { name: "Next question" }).click();
+  await advanceHost(page, "Next question");
   await player.getByRole("button", { name: "B False", exact: true }).click();
   await page.getByRole("button", { name: "Reveal answers" }).click();
   await page.getByRole("button", { name: "Finish & save results" }).click();
@@ -734,7 +750,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await player.getByLabel("Your nickname").fill("Round fan");
   await player.getByRole("button", { name: "Join game" }).click();
   await expect(page.locator("#playerCount")).toHaveText("1");
-  await page.getByRole("button", { name: "Start question" }).click();
+  await advanceHost(page, "Start question");
   await expect(player.locator("#playerRound")).toContainText("Round 1: Easy");
   await expect(player.locator("#playerRound")).toContainText("Last question");
   await page.locator("#toggleLeaderboard").click();
@@ -782,7 +798,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     fullPage: false,
     animations: "disabled",
   });
-  await page.getByRole("button", { name: "Next round" }).click();
+  await advanceHost(page, "Next round");
   await expect(page.locator("#hostLeaderboard")).toBeHidden();
   await expect(page.locator("#hostQuestion")).toHaveText("Round 2: Challenge");
   await expect(player.locator("#playerTitle")).toHaveText("Round 2: Challenge");
@@ -791,7 +807,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     animations: "disabled",
     fullPage: false,
   });
-  await page.getByRole("button", { name: "Start this round" }).click();
+  await advanceHost(page, "Start this round");
   await player.getByRole("button", { name: "B False", exact: true }).click();
   await page.getByRole("button", { name: "Reveal answers" }).click();
   await page.getByRole("button", { name: "Finish & save results" }).click();
@@ -857,6 +873,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     path: "test-artifacts/v06-admin-oversight.png",
     animations: "disabled",
   });
+  await require("./admin-studio-browser")({ page, friendPage, png });
   await page.locator('.nav-item[data-view="reports"]').click();
   const reportsBefore = await page
     .locator("#reportList .report-detail")
@@ -951,7 +968,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await player.getByLabel("Your nickname").fill("Layout player");
   await player.getByRole("button", { name: "Join game" }).click();
   await expect(page.locator("#playerCount")).toHaveText("1");
-  await page.getByRole("button", { name: "Start question" }).click();
+  await advanceHost(page, "Start question");
   await expect(player.locator("#playerOptions button")).toHaveCount(6);
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(imageRequests.length).toBe(layoutImageDownloads);
@@ -1180,7 +1197,7 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await player.getByLabel("Your nickname").fill("Privacy player");
   await player.getByRole("button", { name: "Join game" }).click();
   await expect(page.locator("#playerCount")).toHaveText("1");
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(countImage(imageA)).toBe(warmA); // Reused, not re-downloaded at Start.
   await expect(page.locator("#hostImageStatus")).toHaveText(
@@ -1209,9 +1226,9 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     (path) => hostImageCache.get(path).image,
     imageB,
   );
-  await page.locator("#nextQuestion").click(); // Reveal A.
+  await advanceHost(page); // Reveal A.
   await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
-  await page.locator("#nextQuestion").click(); // Start B; prepare C (simulated failure).
+  await advanceHost(page); // Start B; prepare C (simulated failure).
   await expect(page.locator("#hostQuestion")).toContainText("Image 2");
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(
@@ -1249,19 +1266,19 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   expect(countImage(imageB)).toBe(3);
   expect(await page.evaluate(() => hostImageCache.size)).toBe(2);
   const warmC = countImage(imageC);
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#hostRound")).toHaveText("NEXT ROUND");
   await expect(page.locator("#hostImageStatus")).toHaveText("Next image ready");
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#hostQuestion")).toContainText("Image 3");
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(countImage(imageC)).toBe(warmC);
   expect(await page.evaluate(() => hostImageCache.size)).toBe(1); // Shared image deduplicated.
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
-  await page.locator("#nextQuestion").click();
+  await advanceHost(page);
   await expect(page.locator("#hostQuestion")).toContainText("Image 4");
   await expect(page.locator("#hostMedia img")).toBeVisible();
   expect(countImage(imageC)).toBe(warmC);

@@ -190,6 +190,8 @@ test(
       host.send("reveal_answers");
       await player.wait("question_ended");
       host.send("start_question");
+      await player.wait("last_question_intro");
+      host.send("start_question");
       const next = await player.wait("question_started");
       await Promise.all(
         Array.from({ length: 100 }, () => image(next.question.media)),

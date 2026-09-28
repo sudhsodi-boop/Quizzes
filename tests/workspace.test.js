@@ -84,11 +84,18 @@ test(
       await done;
       child = null;
     }
-    async function req(url, method = "GET", body, cookie = "") {
+    async function req(
+      url,
+      method = "GET",
+      body,
+      cookie = "",
+      extraHeaders = {},
+    ) {
       const res = await fetch(origin + url, {
         method,
         headers: {
           Origin: origin,
+          ...extraHeaders,
           ...(cookie ? { Cookie: cookie } : {}),
           ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
         },
@@ -323,6 +330,11 @@ test(
             volume: 0.2,
           });
           host.send("next_question");
+          const notice = await player.wait("last_question_intro");
+          assert.equal(notice.game.deadline, null);
+          assert.equal(notice.game.upcomingRound, "Round 1: Easy");
+          assert.equal(notice.question, undefined);
+          host.send("next_question");
           const started = await player.wait("question_started");
           assert.equal(started.question.type, "multi");
           assert.equal(started.question.lastInRound, true);
@@ -363,6 +375,8 @@ test(
             (await player.wait("round_intro")).game.upcomingRound,
             "Round 2",
           );
+          host.send("next_question");
+          await player.wait("last_question_intro");
           host.send("next_question");
           await player.wait("question_started");
           host.send("set_leaderboard", { visible: true });
@@ -664,7 +678,7 @@ test(
         },
       );
       await t.test(
-        "designated admin oversight is read-only and never available to friends",
+        "designated admin full-Studio edits are scoped, revision-checked and never available to friends",
         async () => {
           assert.equal(
             (await req("/api/session", "GET", undefined, owner)).value.user
@@ -803,7 +817,157 @@ test(
             ).res.status,
             405,
           );
+          const editorPath =
+            "/api/oversight/workspaces/" + friendId + "/quizzes/" + saved.id;
+          const original = (await req(editorPath, "GET", undefined, owner))
+            .value;
+          assert.equal(original._oversightOwner, friendId);
+          assert.equal(original.music, friendMusic);
+          assert.equal(
+            (await req(editorPath, "GET", undefined, friend)).res.status,
+            403,
+          );
+          assert.equal(
+            (
+              await req(editorPath, "PUT", original, friend, {
+                "If-Match": '"1"',
+              })
+            ).res.status,
+            403,
+          );
+          assert.equal(
+            (await req(editorPath, "PUT", original, owner)).res.status,
+            428,
+          );
+          assert.equal(
+            (await req(editorPath, "DELETE", undefined, owner)).res.status,
+            405,
+          );
+          assert.equal(
+            (await req("/api/quizzes/" + saved.id, "DELETE", undefined, owner))
+              .res.status,
+            404,
+          );
+          const adminId = (await req("/api/session", "GET", undefined, owner))
+            .value.user.id;
+          assert.equal(
+            (
+              await req(
+                "/api/oversight/workspaces/" + adminId + "/quizzes/" + saved.id,
+                "GET",
+                undefined,
+                owner,
+              )
+            ).res.status,
+            404,
+          );
+          const media = await req(editorPath + "/media", "POST", wav, owner);
+          assert.equal(media.res.status, 201);
+          assert.equal(
+            (await req(media.value.url, "GET", undefined, friend)).res.status,
+            200,
+          );
+          assert.equal(
+            (await req(editorPath + "/media", "POST", wav, friend)).res.status,
+            403,
+          );
+          const pending = {
+            ...original,
+            title: "Admin revised friend quiz",
+            music: media.value.url,
+          };
+          const adminDraft = await req(
+            "/api/editor-drafts/" + saved.id,
+            "PUT",
+            { version: 0, document: pending },
+            owner,
+          );
+          assert.equal(adminDraft.res.status, 200);
+          assert.equal(
+            (
+              await req(
+                "/api/editor-drafts/" + saved.id,
+                "GET",
+                undefined,
+                friend,
+              )
+            ).res.status,
+            404,
+          );
+          assert.equal(
+            (
+              await req(
+                "/api/editor-drafts/" + saved.id,
+                "PUT",
+                { version: 0, document: pending },
+                friend,
+              )
+            ).res.status,
+            403,
+          );
+          assert.equal(
+            (await req("/api/quizzes", "GET", undefined, friend)).value.find(
+              (q) => q.id === saved.id,
+            ).title,
+            "Friend-only quiz",
+          );
+          const updated = await req(
+            editorPath,
+            "PUT",
+            { ...pending, _lastAdminEdit: { email: "spoofed" } },
+            owner,
+            { "If-Match": '"1"' },
+          );
+          assert.equal(updated.res.status, 200);
+          assert.equal(updated.value._revision, 2);
+          assert.equal(
+            updated.value._lastAdminEdit.email,
+            "owner@private.test",
+          );
+          assert.equal(updated.value._oversightOwner, undefined);
+          assert.equal(
+            (await req("/api/quizzes", "GET", undefined, friend)).value.find(
+              (q) => q.id === saved.id,
+            ).title,
+            "Admin revised friend quiz",
+          );
+          assert.equal(
+            (
+              await req(editorPath, "PUT", pending, owner, {
+                "If-Match": '"1"',
+              })
+            ).res.status,
+            409,
+          );
+          assert.equal(
+            (
+              await req("/api/quizzes/" + saved.id, "PUT", original, friend, {
+                "If-Match": '"1"',
+              })
+            ).res.status,
+            409,
+          );
+          // An owner save keeps the truthful last-admin-edit stamp and original ownership.
+          assert.equal(
+            (
+              await req(
+                "/api/quizzes/" + saved.id,
+                "PUT",
+                updated.value,
+                friend,
+                { "If-Match": '"2"' },
+              )
+            ).value._lastAdminEdit.email,
+            "owner@private.test",
+          );
+          await req(
+            "/api/editor-drafts/" + saved.id,
+            "DELETE",
+            { version: adminDraft.value.version },
+            owner,
+          );
           const guest = (await req("/api/published/" + fp.id)).value;
+          assert.equal(guest.title, "Friend-only quiz");
           assert.match(guest.music, /grant=/);
           assert.equal((await req(guest.music)).res.status, 200);
           const ownList = (await req("/api/quizzes", "GET", undefined, owner))

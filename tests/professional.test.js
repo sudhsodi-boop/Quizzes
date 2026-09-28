@@ -728,6 +728,10 @@ test(
           assert.equal(ended.game.deadline, deadline);
           assert.ok(ended.leaderboard[0].score > 900);
           host.send("next_question");
+          const notice = await p.wait("last_question_intro");
+          assert.equal(notice.game.deadline, null);
+          assert.equal(notice.question, undefined);
+          host.send("next_question");
           const next = await p.wait("question_started");
           const reset = await host.wait("host_console");
           assert.equal(reset.image.reported, 0);

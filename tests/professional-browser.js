@@ -136,6 +136,10 @@ module.exports = async function professionalBrowser({ page, browser, errors }) {
     "Unpublished rehearsal changes",
   );
   await rehearsal.locator("#rehearsalAdvance").click();
+  await expect(rehearsal.locator("#rehearsalPlayer")).toContainText(
+    "Last question of Round 1",
+  );
+  await rehearsal.getByRole("button", { name: "Start last question" }).click();
   await expect(rehearsal.locator("#rehearsalStage")).toContainText(
     "Choose the prime numbers",
   );
@@ -161,6 +165,7 @@ module.exports = async function professionalBrowser({ page, browser, errors }) {
     "Round 2: Colors",
   );
   await rehearsal.locator("#rehearsalAdvance").click();
+  await rehearsal.getByRole("button", { name: "Start last question" }).click();
   await rehearsal.locator("#rehearsalText").fill("BLUE");
   await rehearsal.locator("#rehearsalSubmit").click();
   await rehearsal.locator("#rehearsalSound").click();
@@ -221,6 +226,30 @@ module.exports = async function professionalBrowser({ page, browser, errors }) {
   await phone.locator("#joinGameBtn").click();
   await expect(phone.locator("#playerQuestion")).toBeVisible();
   await page.locator("#nextQuestion").click();
+  await expect(page.locator("#hostQuestion")).toContainText(
+    "Last question of Round 1",
+  );
+  await expect(phone.locator("#playerTitle")).toContainText(
+    "Last question of Round 1",
+  );
+  await expect(display.locator("#displayStage")).toContainText(
+    "Last question of Round 1",
+  );
+  expect(await page.evaluate(() => game.deadline)).toBeNull();
+  await expect(phone.locator("#playerMedia img")).toHaveCount(0);
+  await expect(display.locator(".display-media img")).toHaveCount(0);
+  expect(await display.locator("#displayStage").textContent()).not.toContain(
+    "Choose the prime numbers",
+  );
+  await display.reload();
+  await expect(display.locator("#displayStage")).toContainText(
+    "Last question of Round 1",
+  );
+  await display.screenshot({
+    path: "test-artifacts/round-last-question.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Start last question" }).click();
   await expect(display.locator("#displayStage")).toContainText(
     "Choose the prime numbers",
   );
@@ -258,6 +287,22 @@ module.exports = async function professionalBrowser({ page, browser, errors }) {
   );
   await page.locator("#nextQuestion").click();
   await expect(display.locator("#displayStage")).toContainText("Leaderboard");
+  await page.locator("#nextQuestion").click();
+  await expect(display.locator("#displayStage")).toContainText(
+    "Round 2: Colors",
+  );
+  await expect(phone.locator("#playerTitle")).toContainText("Round 2: Colors");
+  expect(await page.evaluate(() => game.deadline)).toBeNull();
+  await display.screenshot({
+    path: "test-artifacts/round-two-announcement.png",
+    animations: "disabled",
+  });
+  await page.getByRole("button", { name: "Start this round" }).click();
+  await expect(display.locator("#displayStage")).toContainText(
+    "Last question of Round 2",
+  );
+  await page.getByRole("button", { name: "Start last question" }).click();
+  await expect(phone.locator("#textAnswerForm")).toBeVisible();
   await page.locator("#endGame").click();
   await expect(display.locator("#displayStage")).toContainText(
     "Celebrate your winners",

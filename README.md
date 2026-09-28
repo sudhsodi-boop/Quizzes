@@ -1,8 +1,20 @@
-# Quizzes · v0.8.2
+# Quizzes · v0.9.0-rc.1 — test candidate
 
 A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s read-only oversight. No subscriptions, billing or participant payments.
 
-**Deployment status:** the existing Northflank/Supabase installation is already configured. The v0.8.2 participant-image patch is locally tested, not deployed by the assistant. Use **[APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md)** over v0.8 or v0.8.1. Preserve the existing free service, private storage, database and TLS/CA settings; no new paid resource or environment change.
+**Deployment status:** Professional Hosting & Studio is implemented and locally tested as a **candidate**, not a production-cleared release. The actual hosted participant-image test remains the release gate. The assistant has not deployed it. Follow **[APPLY-v0.9.0-rc.1.md](APPLY-v0.9.0-rc.1.md)** and **[PARTICIPANT-IMAGE-VALIDATION.md](PARTICIPANT-IMAGE-VALIDATION.md)**. Preserve the existing free service, private storage and strict TLS/CA settings; no new paid resource or environment change.
+
+## v0.9 candidate — Professional Hosting & Studio
+
+- Separate read-only audience projector and private host console with notes, upcoming question, QR join, connection counts and diagnostic participant image reports.
+- Local host/simulated-phone rehearsal using shared grading rules; no real rooms, attempts or reports.
+- Private server recovery drafts, conflict checks, bounded undo/redo and explicit official Save. Incomplete drafts stay separate from saved quizzes and immutable assignments.
+- Scoped desktop styling while retaining the established participant phone layout, immediate question/timer starts and host-only broadcast music controls.
+- Backup format 3 includes private drafts; restore supports formats 1–3. Main-admin oversight of saved content remains disclosed; friends remain separate.
+- **Not yet cleared:** real original-image/device/network validation, roughly 100-device hosted capacity, physical sound checks and provider build/deployment. See **[RELEASE-v0.9.0-rc.1.md](RELEASE-v0.9.0-rc.1.md)** for executed tests and limits.
+- Question bank and more useful reports are the next phase, before elaborate game modes.
+
+### Previous image delivery work retained
 
 ## v0.8.2 Participant image delivery — no timing delay added
 

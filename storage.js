@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS recovery_codes (digest TEXT PRIMARY KEY, admin_id TEX
 CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS ownership (kind TEXT NOT NULL, item_id TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES admins(id), PRIMARY KEY(kind,item_id));
 CREATE INDEX IF NOT EXISTS ownership_by_owner ON ownership(owner_id,kind);
+CREATE TABLE IF NOT EXISTS editor_drafts (owner_id TEXT NOT NULL REFERENCES admins(id), draft_key TEXT NOT NULL, version BIGINT NOT NULL, updated BIGINT NOT NULL, document TEXT NOT NULL, PRIMARY KEY(owner_id,draft_key));
 CREATE TABLE IF NOT EXISTS invitations (digest TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES admins(id), expires BIGINT NOT NULL, used BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS publications (id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES admins(id), document TEXT NOT NULL, created BIGINT NOT NULL, closes BIGINT NOT NULL);
 CREATE TABLE IF NOT EXISTS attempts (id TEXT PRIMARY KEY, publication_id TEXT NOT NULL REFERENCES publications(id), browser_hash TEXT NOT NULL, name TEXT NOT NULL, document TEXT NOT NULL, updated BIGINT NOT NULL, UNIQUE(publication_id,browser_hash));
@@ -39,6 +40,7 @@ const TABLES = [
   "invitations",
   "publications",
   "attempts",
+  "editor_drafts",
 ];
 let db;
 if (cloud) {
@@ -56,7 +58,7 @@ if (cloud) {
   );
   const qualify = (sql) =>
     sql.replace(
-      /'(?:''|[^'])*'|\b(admins|sessions|quizzes|media|reports|recovery_codes|metadata|ownership|invitations|publications|attempts)\b/g,
+      /'(?:''|[^'])*'|\b(admins|sessions|quizzes|media|reports|recovery_codes|metadata|ownership|invitations|publications|attempts|editor_drafts)\b/g,
       (text, name) => (name ? "quizzes_private." + name : text),
     );
   const api = (client) => ({
@@ -276,7 +278,7 @@ async function exportDatabase(ownerId) {
           ? "id=?"
           : table === "recovery_codes"
             ? "admin_id=?"
-            : ["ownership", "publications"].includes(table)
+            : ["ownership", "publications", "editor_drafts"].includes(table)
               ? "owner_id=?"
               : table === "attempts"
                 ? "publication_id IN (SELECT id FROM publications WHERE owner_id=?)"
@@ -289,7 +291,7 @@ async function exportDatabase(ownerId) {
     }
     return {
       format: "quizzes-backup",
-      version: 2,
+      version: 3,
       created: Date.now(),
       tables,
     };

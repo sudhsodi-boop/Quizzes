@@ -140,6 +140,9 @@ $("#authButton").onclick = async () => {
     socket?.close();
     forgetConnection();
     game = null;
+    window.Studio?.reset();
+    draft = null;
+    dirty = false;
     account = null;
     quizzes = [];
     reports = [];
@@ -238,7 +241,7 @@ function renderWorkspace() {
     quizzes
       .map(
         (q) =>
-          `<article class="library-card"><div class="quiz-thumb violet">✦</div><b>${e(q.title)}</b><span>${summary(q)}</span><p class="muted quiz-description">${e(q.description || "A new moment for your community.")}</p><div class="button-row"><button class="primary-btn" data-launch="${q.id}">Host game ↗</button><button class="secondary-btn" data-publish="${q.id}">Assign quiz</button><button class="secondary-btn" data-edit="${q.id}">Edit</button><button class="text-btn" data-delete="${q.id}" aria-label="Delete ${e(q.title)}">Delete</button></div></article>`,
+          `<article class="library-card"><div class="quiz-thumb violet">✦</div><b>${e(q.title)}</b><span>${summary(q)}</span><p class="muted quiz-description">${e(q.description || "A new moment for your community.")}</p><div class="button-row"><button class="primary-btn" data-launch="${q.id}">Host game ↗</button><button class="secondary-btn" data-publish="${q.id}">Assign quiz</button><button class="secondary-btn" data-edit="${q.id}">Edit</button><button class="secondary-btn" data-rehearse="${q.id}">Preview &amp; test</button><button class="text-btn" data-delete="${q.id}" aria-label="Delete ${e(q.title)}">Delete</button></div></article>`,
       )
       .join("");
   $("#clearReports").disabled = !account || !reports.length;
@@ -419,6 +422,7 @@ function openEditor() {
   $("#saveStatus").textContent = "";
   renderEditor();
   showView("editor", true);
+  window.Studio?.opened();
 }
 function mediaHTML(url, type, lazy = false) {
   if (!url) return "";
@@ -537,9 +541,14 @@ function buildStudio() {
     duplicate.dataset.duplicateQuestion = "";
     duplicate.textContent = "Duplicate question";
     settings.append(duplicate);
+    const notesLabel = document.createElement("label");
+    notesLabel.className = "studio-notes";
+    notesLabel.innerHTML = `<span>Private host notes</span><textarea data-field="notes" rows="4" maxlength="1000" placeholder="Reminders for you, never shown to players">${e(q.notes || "")}</textarea><small>Visible only in your host console.</small>`;
+    settings.append(notesLabel);
     columns.replaceWith(canvas, settings);
   }
   showStudioSelection();
+  if (dirty) window.Studio?.changed();
 }
 $("#questionNavigator").onclick = (event) => {
   const b = event.target.closest("[data-studio-question]");
@@ -830,11 +839,15 @@ $("#editorForm").onsubmit = async (event) => {
     return showToast("Select correct answers for every multi-answer question.");
   $("#saveQuiz").disabled = true;
   $("#saveStatus").textContent = "Saving…";
+  $("#editorForm").inert = true;
   try {
+    await window.Studio?.beforeSave();
     const q = await api("/api/quizzes" + (draft.id ? "/" + draft.id : ""), {
       method: draft.id ? "PUT" : "POST",
+      headers: draft.id ? { "If-Match": `"${draft._revision || 0}"` } : {},
       body: JSON.stringify(draft),
     });
+    await window.Studio?.saved();
     draft = q;
     dirty = false;
     await loadWorkspace();
@@ -844,6 +857,7 @@ $("#editorForm").onsubmit = async (event) => {
     $("#saveStatus").textContent = err.message;
   } finally {
     $("#saveQuiz").disabled = false;
+    $("#editorForm").inert = false;
   }
 };
 $("#passwordForm").onsubmit = async (event) => {
@@ -957,6 +971,7 @@ function launchQuiz(id) {
   $("#hostResults").innerHTML = "";
   $("#hostCode").textContent = "—";
   $("#nextQuestion").disabled = true;
+  window.ProfessionalHost?.reset();
   openSocket({ type: "create_game", quizId: id });
 }
 function loadGameMusic(url) {
@@ -1180,6 +1195,7 @@ function updateHostImageStatus() {
 }
 
 function handleMessage(m) {
+  window.ProfessionalHost?.message(m);
   if (m.type === "host_images") {
     primeHostImages(m);
     return;
@@ -1369,9 +1385,34 @@ function renderQuestion() {
       : q.type === "multi"
         ? "Select all correct answers, then submit. Wrong selections reduce partial credit."
         : "Choose one answer.";
-  if (participantMode)
+  if (participantMode) {
+    const began = performance.now();
     $("#playerMedia").innerHTML = mediaHTML(q.media, q.mediaType);
-  else renderHostImage(q);
+    const image = $("#playerMedia img");
+    if (image) {
+      let sent = false;
+      const report = async (state) => {
+        if (sent) return;
+        sent = true;
+        if (state === "ready") {
+          try {
+            await image.decode();
+          } catch {
+            state = "error";
+          }
+        }
+        if (socket?.readyState === WebSocket.OPEN && liveQuestion?.id === q.id)
+          send("image_status", {
+            questionId: q.id,
+            state,
+            elapsedMs: Math.min(180000, Math.round(performance.now() - began)),
+          });
+      };
+      image.addEventListener("load", () => report("ready"), { once: true });
+      image.addEventListener("error", () => report("error"), { once: true });
+      if (image.complete && image.naturalWidth) report("ready");
+    }
+  } else renderHostImage(q);
   $(`#${prefix}Results`).innerHTML = "";
   const options = $(`#${prefix}Options`);
   options.innerHTML = "";
@@ -1515,6 +1556,7 @@ function renderEnded(rows) {
   }
 }
 function renderPlayers() {
+  window.ProfessionalHost?.connections();
   if (!game || participantMode) return;
   $("#playerCount").textContent = game.participants.length;
   $("#liveAnswerMeter").textContent = game.participants.filter(
@@ -1628,6 +1670,7 @@ $("#leavePlayer").onclick = () => {
 async function initializeHost() {
   const session = await api("/api/session");
   account = session.user;
+  window.Studio?.authChanged(account);
   privateSetupRequired = !!session.privateSetupRequired;
   setup = session.setupRequired && session.setupEnabled;
   if (account) {

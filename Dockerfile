@@ -7,7 +7,8 @@ FROM node:22-bookworm-slim
 ENV NODE_ENV=production PORT=4173 DATA_DIR=/app/data
 WORKDIR /app
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY package*.json server.js startup-diagnostics.js database-config.js storage.js media-store.js private-image-cache.js backup-service.js seed-quiz.json index.html app.js styles.css quiz-sound.js quiz-import.js quiz-import-worker.js quiz-rules.js workspace-features.js document-format.js extensions.js ./
+COPY package*.json server.js startup-diagnostics.js database-config.js storage.js media-store.js private-image-cache.js studio-server.js professional.js display.html display.js rehearsal.html rehearsal.js qr-code.js backup-service.js seed-quiz.json index.html app.js styles.css quiz-sound.js quiz-import.js quiz-import-worker.js quiz-rules.js workspace-features.js document-format.js extensions.js ./
+COPY FONT-LICENSE.txt QR-CODE-LICENSE.txt THIRD-PARTY-NOTICES.md ./
 COPY scripts ./scripts
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node

@@ -47,4 +47,6 @@ function solution(q) {
         .map((i) => q.options[i])
         .join(" + ");
 }
-module.exports = { grade, correctIndices, roundLabel, solution, normalize };
+const quizRules = { grade, correctIndices, roundLabel, solution, normalize };
+if (typeof module !== "undefined" && module.exports) module.exports = quizRules;
+else window.QuizzesRules = quizRules;

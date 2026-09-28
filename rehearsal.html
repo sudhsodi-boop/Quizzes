@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Quizzes · Rehearsal</title>
+    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.1" />
+  </head>
+  <body class="rehearsal-page">
+    <header class="rehearsal-head">
+      <div>
+        <div class="eyebrow">QUIZZES · PRIVATE REHEARSAL</div>
+        <h1 id="rehearsalTitle">Preview &amp; test</h1>
+        <p>No live room, participant attempts or event reports are created.</p>
+      </div>
+      <button id="restartRehearsal" class="secondary-btn">Restart test</button>
+    </header>
+    <main>
+      <section class="rehearsal-checks">
+        <details open>
+          <summary>Before you host · checks &amp; reminders</summary>
+          <ul id="rehearsalChecks">
+            <li>
+              Open Preview &amp; test from your signed-in Studio or library.
+            </li>
+          </ul>
+          <p id="rehearsalMediaStatus" role="status"></p>
+          <button id="rehearsalSound" class="secondary-btn">Test sound</button
+          ><span id="rehearsalSoundStatus" role="status"></span>
+        </details>
+        <p class="muted">
+          These are scaled previews on this computer—not a physical-phone or
+          network test. Validate participant image speed in a real room before
+          the event.
+        </p>
+      </section>
+      <div class="rehearsal-grid">
+        <section class="rehearsal-host">
+          <div class="eyebrow">HOST / AUDIENCE PREVIEW</div>
+          <div id="rehearsalStage"></div>
+          <div class="rehearsal-actions">
+            <button id="rehearsalAdvance" class="primary-btn" disabled>
+              Start question</button
+            ><button id="rehearsalStandings" class="secondary-btn" disabled>
+              Show standings
+            </button>
+          </div>
+          <aside id="rehearsalNotes"></aside>
+        </section>
+        <section class="rehearsal-phone">
+          <div class="eyebrow">SIMULATED PARTICIPANT</div>
+          <div id="rehearsalPlayer">
+            <h2>Your test player</h2>
+            <p>Answer here to rehearse the flow.</p>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script src="/quiz-rules.js?v=0.9.0-rc.1"></script>
+    <script src="/rehearsal.js?v=0.9.0-rc.1"></script>
+  </body>
+</html>

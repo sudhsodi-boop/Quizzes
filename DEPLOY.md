@@ -1,3 +1,5 @@
+> **Current candidate:** v0.9.0-rc.1, Professional Hosting & Studio. Use [APPLY-v0.9.0-rc.1.md](APPLY-v0.9.0-rc.1.md). It is not deployed by the assistant and the real participant-image release gate remains pending. Keep the existing free Northflank/Supabase service and strict TLS settings unchanged. Backup format 3 now includes private recovery drafts. No new environment variable or paid resource is required.
+
 # Quizzes — get a stable HTTPS testing address
 
 **Current status:** use the existing Northflank/Supabase installation. The v0.8.2 participant-image update is locally tested, not deployed by the assistant; follow [APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md). It includes the earlier PC-font/host-preload patch and keeps timers starting immediately. No paid resources or hosting-variable changes are required. Fresh-install instructions below are historical guidance, not a request to create new services.

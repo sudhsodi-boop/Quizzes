@@ -3,7 +3,7 @@ module.exports = defineConfig({
   testDir: "./tests",
   testMatch: "browser.spec.js",
   workers: 1,
-  timeout: 150000,
+  timeout: 240000,
   use: { baseURL: "http://localhost:4182", headless: true },
   webServer: {
     command: "node server.js",

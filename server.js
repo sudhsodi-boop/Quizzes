@@ -37,6 +37,15 @@ const features = require("./workspace-features")({
   rate,
   peer,
 });
+const studio = require("./studio-server")({
+  db,
+  json,
+  data,
+  fail,
+  owns,
+  validMedia,
+  rate,
+});
 const PORT = Number(process.env.PORT || 4173);
 const games = new Map();
 const limits = new Map();
@@ -168,6 +177,7 @@ async function validateQuiz(input, ownerId, id = crypto.randomUUID()) {
     title: bounded(input.title, 120, "quiz title"),
     description: bounded(input.description || "", 1000, "description", false),
     music: await validMedia(input.music, "audio", ownerId),
+    _revision: 1,
     rounds: [],
   };
   if (
@@ -191,6 +201,7 @@ async function validateQuiz(input, ownerId, id = crypto.randomUUID()) {
       const question = {
         type: x.type,
         text: bounded(x.text, 1000, "question"),
+        notes: bounded(x.notes || "", 1000, "private notes", false),
         seconds: Number(x.seconds),
         points: Number(x.points),
         media: await validMedia(x.media, undefined, ownerId),
@@ -300,7 +311,10 @@ const server = http.createServer(async (req, res) => {
       fail("Request origin not allowed.", 403);
     if (p === "/healthz" && req.method === "GET") {
       await db.prepare("SELECT 1 AS ok").get();
-      return json(res, 200, { ok: true });
+      return json(res, 200, {
+        ok: true,
+        version: require("./package.json").version,
+      });
     }
     if (p === "/api/session" && req.method === "GET")
       return json(res, 200, {
@@ -438,6 +452,7 @@ const server = http.createServer(async (req, res) => {
     if (await features.handle(req, res, p)) return;
     if (p.startsWith("/api/")) {
       const admin = await requireUser(req);
+      if (await studio(req, res, p, admin)) return;
       if (p === "/api/recovery-code" && req.method === "POST") {
         rate("recovery-code:" + admin.id, 5, 15 * 60 * 1000);
         const x = await data(req);
@@ -581,10 +596,32 @@ const server = http.createServer(async (req, res) => {
         if (!(await owns("quizzes", match[1], admin.id)))
           fail("Quiz not found.", 404);
         if (req.method === "PUT") {
-          const q = await validateQuiz(await data(req), admin.id, match[1]);
-          await db
-            .prepare("UPDATE quizzes SET document=?,updated=? WHERE id=?")
-            .run(JSON.stringify(q), Date.now(), q.id);
+          const input = await data(req);
+          const before = await db
+            .prepare("SELECT document FROM quizzes WHERE id=?")
+            .get(match[1]);
+          if (!before) fail("Quiz not found.", 404);
+          const revision = JSON.parse(before.document)._revision || 0;
+          if (
+            req.headers["if-match"] !== undefined &&
+            req.headers["if-match"] !== `"${revision}"`
+          )
+            fail(
+              "This quiz was saved in another tab. Your draft is kept; reload the saved quiz or save a separate copy.",
+              409,
+            );
+          const q = await validateQuiz(input, admin.id, match[1]);
+          q._revision = revision + 1;
+          const changed = await db
+            .prepare(
+              "UPDATE quizzes SET document=?,updated=? WHERE id=? AND document=?",
+            )
+            .run(JSON.stringify(q), Date.now(), q.id, before.document);
+          if (!changed.changes)
+            fail(
+              "This quiz changed while saving. Your draft is kept; try a separate copy.",
+              409,
+            );
           return json(res, 200, q);
         }
         if (req.method === "DELETE") {
@@ -678,6 +715,13 @@ const server = http.createServer(async (req, res) => {
       "/play": "index.html",
       "/invite": "index.html",
       "/extensions.js": "extensions.js",
+      "/professional.js": "professional.js",
+      "/display": "display.html",
+      "/display.js": "display.js",
+      "/rehearsal": "rehearsal.html",
+      "/rehearsal.js": "rehearsal.js",
+      "/quiz-rules.js": "quiz-rules.js",
+      "/qr-code.js": "qr-code.js",
       "/index.html": "index.html",
       "/styles.css": "styles.css",
       "/app.js": "app.js",
@@ -861,6 +905,33 @@ async function endGame(g, reason = "Host ended the game") {
     10 * 60 * 1000,
   );
 }
+// Private console data is NEVER included in state(), question(), sync payloads
+// for other roles, or a broadcast. Display tokens permit only the public room.
+function sendHostPreview(g) {
+  const q = current(g),
+    next = g.questions[g.index + 1];
+  const observations = [...(g.imageTelemetry || new Map()).values()];
+  send(g.host, "host_console", {
+    displayToken: g.displayToken,
+    currentNotes: q?.notes || "",
+    next: next
+      ? {
+          text: next.text,
+          round: rules.roundLabel(next.roundIndex, next.round),
+        }
+      : null,
+    image: q?.mediaType?.startsWith("image/")
+      ? {
+          ready: observations.filter((x) => x.state === "ready").length,
+          failed: observations.filter((x) => x.state === "error").length,
+          slow: observations.filter(
+            (x) => x.state === "ready" && x.elapsedMs > 3000,
+          ).length,
+          reported: observations.length,
+        }
+      : null,
+  });
+}
 // Only the authenticated room host receives future image grants. Never put these
 // in state(), question(), or broadcast payloads. Use the immutable room snapshot.
 function sendHostImages(ws, g, retry = false) {
@@ -892,6 +963,7 @@ async function startQuestion(g) {
     return;
   }
   g.index++;
+  g.imageTelemetry = new Map();
   g.status = "question";
   g.leaderboardVisible = false;
   g.startedAt = Date.now();
@@ -902,6 +974,7 @@ async function startQuestion(g) {
     p.pending = 0;
   }
   sendHostImages(g.host, g);
+  sendHostPreview(g);
   broadcast(g, "question_started", {
     game: state(g),
     question: question(g),
@@ -919,6 +992,7 @@ function sync(ws, g, type, extra = {}) {
     ...extra,
   });
   sendHostImages(ws, g);
+  if (ws === g.host) sendHostPreview(g);
 }
 function normalize(s) {
   return s
@@ -994,6 +1068,9 @@ wss.on("connection", (ws, req) => {
           quiz,
           adminId: admin.id,
           hostToken,
+          displayToken: crypto.randomBytes(32).toString("hex"),
+          displaySession: hash(token(req)),
+          imageTelemetry: new Map(),
           host: ws,
           created: Date.now(),
           status: "lobby",
@@ -1033,6 +1110,11 @@ wss.on("connection", (ws, req) => {
           g.host.close(4000, "Host moved to another connection");
         clearTimeout(g.orphanTimer);
         g.host = ws;
+        if (g.displaySession !== hash(token(req)))
+          for (const client of g.clients)
+            if (client.role === "display")
+              client.close(4000, "Host session changed; reconnect");
+        g.displaySession = hash(token(req));
         g.clients.add(ws);
         ws.game = g;
         ws.role = "host";
@@ -1042,6 +1124,35 @@ wss.on("connection", (ws, req) => {
         return sync(ws, g, "host_resumed", {
           music: features.mediaURL(g.quiz.music),
         });
+      }
+      if (msg.type === "join_display") {
+        if (ws.game) fail("Already in a room.");
+        const g = games.get(String(msg.code || ""));
+        const access =
+          g &&
+          msg.displayToken === g.displayToken &&
+          (await db
+            .prepare(
+              "SELECT expires FROM sessions WHERE token=? AND admin_id=? AND expires>?",
+            )
+            .get(g.displaySession, g.adminId, Date.now()));
+        if (!access)
+          fail(
+            "Display link unavailable. Ask the host to open the projector again.",
+            403,
+          );
+        ws.sessionExpiryTimer = setTimeout(
+          () => ws.close(4001, "Host session expired"),
+          Math.max(1, Number(access.expires) - Date.now()),
+        );
+        if ([...g.clients].filter((c) => c.role === "display").length >= 4)
+          fail("Maximum four projector connections.");
+        ws.game = g;
+        ws.role = "display";
+        ws.adminId = g.adminId;
+        ws.sessionHash = g.displaySession;
+        g.clients.add(ws);
+        return sync(ws, g, "display_joined");
       }
       if (msg.type === "join_game" || msg.type === "resume_player") {
         if (ws.game) fail("Already in a game.");
@@ -1096,10 +1207,31 @@ wss.on("connection", (ws, req) => {
       }
       const g = ws.game;
       if (!g) fail("Join a game first.");
+      if (ws.role === "display") fail("Projector is read-only.", 403);
       if (msg.type === "refresh_music")
         return send(ws, "music_refreshed", {
           music: features.mediaURL(g.quiz.music),
         });
+      if (ws.role === "player" && msg.type === "image_status") {
+        if (
+          msg.questionId !== question(g)?.id ||
+          !current(g)?.mediaType?.startsWith("image/") ||
+          !["ready", "error"].includes(msg.state)
+        )
+          return;
+        if (
+          !Number.isFinite(msg.elapsedMs) ||
+          msg.elapsedMs < 0 ||
+          msg.elapsedMs > 180000
+        )
+          return;
+        g.imageTelemetry.set(ws.playerId, {
+          state: msg.state,
+          elapsedMs: Math.round(msg.elapsedMs),
+        });
+        sendHostPreview(g);
+        return;
+      }
       if (ws.role === "host") {
         const admin = await requireUser(req);
         if (ws.readyState !== 1) return;
@@ -1196,6 +1328,7 @@ wss.on("connection", (ws, req) => {
       .finally(() => pending--);
   });
   ws.on("close", () => {
+    clearTimeout(ws.sessionExpiryTimer);
     const g = ws.game;
     if (!g) return;
     g.clients.delete(ws);
@@ -1234,6 +1367,16 @@ const heartbeat = setInterval(async () => {
   }
   try {
     await db.prepare("DELETE FROM sessions WHERE expires<?").run(Date.now());
+    const active = new Set(
+      (
+        await db
+          .prepare("SELECT token FROM sessions WHERE expires>?")
+          .all(Date.now())
+      ).map((s) => s.token),
+    );
+    for (const ws of wss.clients)
+      if (ws.sessionHash && !active.has(ws.sessionHash))
+        ws.close(4001, "Session expired");
   } catch {
     console.error("Session cleanup deferred: database unavailable.");
   }

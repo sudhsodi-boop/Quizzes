@@ -1,0 +1,12 @@
+node_modules
+data
+.test-data-*
+.browser-test-data
+.cache
+.npm
+.git
+test-artifacts
+test-results
+.env
+
+.test-studio-*/

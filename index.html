@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
-    <link rel="stylesheet" href="/styles.css?v=0.8.0" />
+    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.1" />
   </head>
   <body>
     <div class="app-shell" id="hostApp">
@@ -162,6 +162,14 @@
               ><button class="primary-btn" data-new>＋ Create quiz</button>
             </div>
           </div>
+          <div class="studio-recovery-strip">
+            <span
+              >Private workspace · Saved quizzes stay separate from recovery
+              drafts.</span
+            ><button id="recoverDrafts" class="secondary-btn">
+              Recover drafts
+            </button>
+          </div>
           <div class="library-grid" id="library"></div>
           <section class="panel publications-panel">
             <div class="page-title">
@@ -194,6 +202,24 @@
                 <button
                   type="button"
                   class="secondary-btn"
+                  id="studioUndo"
+                  disabled
+                  title="Undo (Ctrl/Cmd+Z)"
+                >
+                  ↶ Undo</button
+                ><button
+                  type="button"
+                  class="secondary-btn"
+                  id="studioRedo"
+                  disabled
+                  title="Redo (Ctrl/Cmd+Shift+Z)"
+                >
+                  ↷ Redo</button
+                ><button type="button" class="secondary-btn" id="rehearseDraft">
+                  Preview &amp; test</button
+                ><button
+                  type="button"
+                  class="secondary-btn"
                   id="openQuizSettings"
                   aria-expanded="false"
                 >
@@ -205,6 +231,19 @@
                 </button>
               </div>
             </div>
+            <div class="studio-save-strip">
+              <span id="draftStatus" role="status"
+                >Recovery drafts are private. Save quiz makes changes
+                official.</span
+              ><button id="saveDraftCopy" type="button" class="text-btn">
+                Make a separate copy
+              </button>
+            </div>
+            <div
+              id="draftRecoveryPrompt"
+              class="studio-recovery-strip"
+              hidden
+            ></div>
             <div id="importReview" class="import-review" hidden>
               <h2>Review your imported quiz</h2>
               <p id="importSummary"></p>
@@ -603,6 +642,19 @@
           <div>
             <div class="eyebrow">QUIZZES · LIVE GAME SHOW</div>
             <h2 id="gameTitle">Your community, connected</h2>
+            <div class="pro-host-tools">
+              <button id="openProjector" class="text-btn" type="button">
+                Projector ↗</button
+              ><button
+                id="toggleConsole"
+                class="text-btn"
+                type="button"
+                aria-controls="hostConsole"
+                aria-expanded="false"
+              >
+                Host console
+              </button>
+            </div>
             <p class="muted" id="hostConnection">Connecting…</p>
           </div>
           <div
@@ -667,6 +719,41 @@
               </button>
             </div>
           </div>
+          <aside id="hostConsole" hidden aria-label="Private host console">
+            <div class="eyebrow">PRIVATE · NOT PROJECTED</div>
+            <h2>Host console</h2>
+            <p class="muted">
+              Use Projector on the audience screen. Keep this window private.
+            </p>
+            <section>
+              <h3>Coming up</h3>
+              <small id="consoleNextRound"></small>
+              <p id="consoleNext">Waiting for the room…</p>
+            </section>
+            <section>
+              <h3>Your question notes</h3>
+              <p id="consoleNotes">No private notes for this question.</p>
+            </section>
+            <section>
+              <h3>Participant image check</h3>
+              <p id="consoleImages" role="status">No image question active.</p>
+              <small
+                >Client-reported download/decode timing. Diagnostic only; never
+                delays the timer or changes points.</small
+              >
+            </section>
+            <section>
+              <h3>Connections</h3>
+              <p id="consoleConnections"></p>
+            </section>
+            <section>
+              <h3>Invite participants</h3>
+              <div id="consoleQR" class="join-qr"></div>
+              <p class="muted">
+                Scan to open the normal code-and-nickname join screen.
+              </p>
+            </section>
+          </aside>
         </div>
       </div>
     </div>
@@ -957,8 +1044,21 @@ Answer: together</pre
         Download results CSV
       </button>
     </dialog>
-    <script src="/quiz-sound.js?v=0.8.0"></script>
-    <script src="/app.js?v=0.8.0"></script>
-    <script src="/extensions.js?v=0.8.0"></script>
+    <dialog id="draftRecoveryDialog" class="pro-dialog">
+      <header>
+        <h2>Recover private drafts</h2>
+        <button id="closeDraftRecovery" class="secondary-btn">Close</button>
+      </header>
+      <p>
+        Recovery does not replace a saved quiz until you choose Save quiz.
+        Drafts include incomplete edits and private notes.
+      </p>
+      <div id="draftRecoveryList"></div>
+    </dialog>
+    <script src="/qr-code.js?v=0.9.0-rc.1"></script>
+    <script src="/quiz-sound.js?v=0.9.0-rc.1"></script>
+    <script src="/app.js?v=0.9.0-rc.1"></script>
+    <script src="/extensions.js?v=0.9.0-rc.1"></script>
+    <script src="/professional.js?v=0.9.0-rc.1"></script>
   </body>
 </html>

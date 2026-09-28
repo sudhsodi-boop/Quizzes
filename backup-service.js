@@ -16,7 +16,7 @@ async function writeBackup(destination, ownerId) {
       name: "database.json",
     });
     archive.append(
-      "PRIVATE BACKUP: contains host password hashes, recovery-code hashes, quizzes, participant reports and uploaded media. Store securely. Restore with npm run restore -- /path/to/extracted-backup. Active rooms and login sessions are not included.\n",
+      "PRIVATE BACKUP: contains host password hashes, recovery-code hashes, quizzes, private editor drafts/import-review text, participant reports and uploaded media. Store securely. Restore with npm run restore -- /path/to/extracted-backup. Active rooms and login sessions are not included.\n",
       { name: "READ-ME.txt" },
     );
     for (const m of snapshot.tables.media) {

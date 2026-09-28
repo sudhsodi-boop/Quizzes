@@ -1,13 +1,13 @@
 {
   "name": "quizzes-live",
-  "version": "0.8.2",
+  "version": "0.9.0-rc.1",
   "private": true,
   "description": "Real-time nonprofit quiz platform prototype",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "create-admin": "node scripts/create-admin.js",
-    "test": "node --test tests/integration.test.js tests/deployment.test.js tests/import.test.js tests/workspace.test.js tests/migration.test.js tests/image-cache.test.js tests/media-delivery.test.js",
+    "test": "node --test tests/integration.test.js tests/deployment.test.js tests/import.test.js tests/workspace.test.js tests/migration.test.js tests/image-cache.test.js tests/media-delivery.test.js tests/professional.test.js",
     "backup": "node scripts/backup.js",
     "test:browser": "node scripts/browser-tests.js",
     "restore": "node scripts/restore.js",

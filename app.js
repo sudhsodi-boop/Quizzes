@@ -749,6 +749,7 @@ function launchQuiz(id) {
   if (game && game.status !== "ended") {
     showToast("Finish your current game before launching another.");
     $("#gameModal").classList.add("open");
+    scheduleLiveFit();
     return;
   }
   forgetConnection();
@@ -758,7 +759,6 @@ function launchQuiz(id) {
   $("#hostQuestion").textContent = "Opening the room…";
   $("#hostOptions").innerHTML = "";
   $("#hostResults").innerHTML = "";
-  $("#hostPlayers").innerHTML = "";
   $("#hostCode").textContent = "—";
   $("#nextQuestion").disabled = true;
   openSocket({ type: "create_game", quizId: id });
@@ -846,8 +846,11 @@ function handleMessage(m) {
     }
     loadGameMusic(m.music);
     if (game.status === "question") renderQuestion();
-    else if (game.status === "results") renderResults(m.result);
-    else if (game.status === "ended") renderEnded(m.leaderboard);
+    else if (game.status === "results") {
+      // Reconstruct the question before applying results after a reconnect/reload.
+      if (liveQuestion) renderQuestion();
+      renderResults(m.result);
+    } else if (game.status === "ended") renderEnded(m.leaderboard);
     else if (game.status === "round_intro") renderRoundIntro();
     else renderLobby();
     renderPlayers();
@@ -1086,8 +1089,12 @@ function renderEnded(rows) {
     "Thank you for playing. Here are the final results.";
   $(`#${prefix}Options`).innerHTML = "";
   $(`#${prefix}Media`).innerHTML = "";
-  $(`#${prefix}Results`).innerHTML =
-    podiumHTML(rows || []) + leaderboardHTML(rows || []);
+  $(`#${prefix}Results`).innerHTML = participantMode
+    ? podiumHTML(rows || []) + leaderboardHTML(rows || [])
+    : '<p class="session-saved">Session saved. View detailed results in Reports after closing this screen.</p>';
+  if (!participantMode)
+    $("#hostHint").textContent =
+      "Thank you for hosting. Players can see their final leaderboard.";
   if (participantMode) {
     $("#textAnswerForm").hidden = true;
     $("#answerStatus").textContent =
@@ -1105,14 +1112,6 @@ function renderPlayers() {
     game.status === "question"
       ? `${game.participants.filter((p) => p.answered).length} / ${game.participants.length} answered`
       : `${game.participants.filter((p) => p.connected).length} connected`;
-  $("#hostPlayers").innerHTML = game.participants.length
-    ? game.participants
-        .map(
-          (p) =>
-            `<div><i class="player-dot one">${e(p.name.charAt(0).toUpperCase())}</i><span>${e(p.name)}<small>${!p.connected ? "Reconnecting" : game.status === "question" && p.answered ? "Answer locked" : "Ready"}</small></span><b>${p.score}</b></div>`,
-        )
-        .join("")
-    : '<p class="muted empty-state">Your people will appear here when they join.</p>';
 }
 setInterval(() => {
   if (!game) return;
@@ -1154,14 +1153,22 @@ $("#nextQuestion").onclick = () => {
 };
 $("#endGame").onclick = () => {
   if (game?.status === "ended") {
-    $("#gameModal").classList.remove("open");
+    minimizeGame();
     return;
   }
   if (game && confirm("End this game and save everyone’s results?"))
     send("end_game");
 };
-$("#closeGame").onclick = () => $("#gameModal").classList.remove("open");
-$("#returnToGame").onclick = () => $("#gameModal").classList.add("open");
+function minimizeGame() {
+  if (document.fullscreenElement === $("#gameModal"))
+    document.exitFullscreen().catch(() => {});
+  $("#gameModal").classList.remove("open");
+}
+$("#closeGame").onclick = minimizeGame;
+$("#returnToGame").onclick = () => {
+  $("#gameModal").classList.add("open");
+  scheduleLiveFit();
+};
 $("#copyJoin").onclick = async () => {
   if (!game) return;
   try {
@@ -1200,6 +1207,7 @@ $("#leavePlayer").onclick = () => {
   game = null;
   $("#playerMedia").innerHTML = "";
   $("#playerQuestion").hidden = true;
+  delete $("#participantApp").dataset.phase;
   $("#joinPanel").hidden = false;
   $("#joinGameBtn").disabled = false;
   $("#joinStatus").textContent = "";
@@ -1356,6 +1364,7 @@ $("#backupForm").onsubmit = async (event) => {
 function setGameStyle(phase) {
   $("#gameModal").dataset.phase = phase;
   $("#participantApp").dataset.phase = phase;
+  scheduleLiveFit();
 }
 function podiumHTML(rows) {
   if (!rows.length) return "";
@@ -1484,14 +1493,30 @@ $("#moveSelected").onclick = () =>
 $("#submitMulti").onclick = () =>
   submitAnswer([...multiSelection].sort((a, b) => a - b));
 function showLiveLeaderboard(visible, rows) {
-  const panel = $(participantMode ? "#playerLeaderboard" : "#hostLeaderboard");
-  panel.hidden = !visible;
-  panel.innerHTML = visible
-    ? "<h3>Leaderboard · total points</h3>" + leaderboardHTML(rows || [])
-    : "";
+  // The host controls the audience's screen, without displaying scores on their own screen.
+  $("#hostLeaderboard").hidden = true;
+  $("#hostLeaderboard").innerHTML = "";
+  const panel = $("#playerLeaderboard");
+  const wasVisible = !panel.hidden;
+  panel.hidden = !participantMode || !visible;
+  $("#playerQuestion").classList.toggle(
+    "leaderboard-only",
+    participantMode && visible,
+  );
+  panel.innerHTML =
+    participantMode && visible
+      ? '<div class="eyebrow">LIVE STANDINGS</div><h2 tabindex="-1">Leaderboard</h2><p class="muted">Total points · Your host will continue shortly.</p>' +
+        leaderboardHTML(rows || [])
+      : "";
+  if (participantMode && visible) {
+    stopQuestionAudio();
+    if (!wasVisible) $("h2", panel).focus({ preventScroll: true });
+  }
   $("#toggleLeaderboard").textContent = visible
-    ? "Hide leaderboard"
-    : "Show leaderboard";
+    ? "Hide player leaderboard"
+    : "Show player leaderboard";
+  $("#toggleLeaderboard").setAttribute("aria-pressed", String(visible));
+  scheduleLiveFit();
 }
 $("#toggleLeaderboard").onclick = () => {
   if (game) send("set_leaderboard", { visible: !game.leaderboardVisible });
@@ -1520,3 +1545,63 @@ function renderRoundIntro() {
     $("#nextQuestion").disabled = false;
   }
 }
+
+// Fit typical live questions to the available viewport without clipping content.
+// At the readable minimum, exceptionally long content may scroll rather than become unreadable.
+let liveFitFrame = 0;
+function scheduleLiveFit() {
+  cancelAnimationFrame(liveFitFrame);
+  liveFitFrame = requestAnimationFrame(fitLiveScreen);
+}
+function fitLiveScreen() {
+  const root = participantMode ? $("#participantApp") : $("#gameModal");
+  if (!game || (!participantMode && !root.classList.contains("open"))) return;
+  const surface = participantMode ? $(".participant-card") : $(".game-stage");
+  root.style.setProperty("--live-question", "40px");
+  root.style.setProperty("--live-option", "24px");
+  root.style.setProperty("--live-media", "200px");
+  root.style.setProperty("--live-gap", "14px");
+  if (
+    participantMode &&
+    (!$("#playerLeaderboard").hidden || game.status === "ended")
+  )
+    return;
+  for (let step = 0; step <= 12; step++) {
+    root.style.setProperty(
+      "--live-question",
+      `${Math.max(20, 40 - step * 2)}px`,
+    );
+    root.style.setProperty("--live-option", `${Math.max(16, 24 - step)}px`);
+    root.style.setProperty(
+      "--live-media",
+      `${Math.max(72, 200 - step * 12)}px`,
+    );
+    root.style.setProperty("--live-gap", `${Math.max(6, 14 - step)}px`);
+    if (surface.scrollHeight <= surface.clientHeight + 2) break;
+  }
+}
+window.addEventListener("resize", scheduleLiveFit);
+document.addEventListener("fullscreenchange", () => {
+  $("#fullscreenGame").textContent = document.fullscreenElement
+    ? "Exit full screen"
+    : "Full screen";
+  scheduleLiveFit();
+});
+document.addEventListener(
+  "load",
+  (event) => {
+    if (event.target.matches?.("#hostMedia img, #playerMedia img"))
+      scheduleLiveFit();
+  },
+  true,
+);
+$("#fullscreenGame").onclick = async () => {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await $("#gameModal").requestFullscreen();
+  } catch {
+    showToast(
+      "Full screen is unavailable here. You can use your browser's full-screen mode.",
+    );
+  }
+};

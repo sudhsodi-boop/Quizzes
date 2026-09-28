@@ -5,6 +5,14 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   browser,
 }) => {
   const errors = [];
+  const imageRequests = [];
+  page.on("request", (request) => {
+    if (
+      request.resourceType() === "image" &&
+      new URL(request.url()).pathname.startsWith("/media/")
+    )
+      imageRequests.push(request.url());
+  });
   page.on("pageerror", (err) => errors.push(err.message));
   page.on("dialog", (d) => d.accept());
   await page.goto("/");
@@ -105,6 +113,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await quiz.getByRole("button", { name: "Host game" }).click();
   await expect(page.locator("#hostCode")).toHaveText(/^QZ[A-F0-9]{6}$/);
   const code = await page.locator("#hostCode").textContent();
+  await expect(page.locator("#hostImageStatus")).toHaveText(
+    "First image ready",
+  );
+  const lobbyImageDownloads = imageRequests.length;
   await page.locator("#lobbyMusic audio").evaluate((audio) => audio.play());
   await expect
     .poll(() =>
@@ -143,6 +155,8 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     "Which option is correct?",
   );
   await expect(player.locator("#playerMedia img")).toBeVisible();
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(imageRequests.length).toBe(lobbyImageDownloads);
   await page.setViewportSize({ width: 1366, height: 768 });
   await expect
     .poll(() =>
@@ -915,6 +929,10 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     .click();
   await expect(page.locator("#hostCode")).toHaveText(/^QZ[A-F0-9]{6}$/);
   const layoutCode = await page.locator("#hostCode").textContent();
+  await expect(page.locator("#hostImageStatus")).toHaveText(
+    "First image ready",
+  );
+  const layoutImageDownloads = imageRequests.length;
   await expect(page.locator("#toggleLeaderboard")).toBeEnabled();
   await page.locator("#toggleLeaderboard").click();
   await expect(page.locator("#hostLeaderboard")).toContainText(
@@ -927,6 +945,8 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await expect(page.locator("#playerCount")).toHaveText("1");
   await page.getByRole("button", { name: "Start question" }).click();
   await expect(player.locator("#playerOptions button")).toHaveCount(6);
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(imageRequests.length).toBe(layoutImageDownloads);
   for (const viewport of [
     { width: 1366, height: 768 },
     { width: 1280, height: 720 },
@@ -954,9 +974,15 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
       await page
         .locator("#hostQuestion")
         .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
-    ).toBeGreaterThanOrEqual(20);
+    ).toBeGreaterThanOrEqual(36);
+    expect(
+      await page
+        .locator("#hostOptions .answer")
+        .first()
+        .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+    ).toBeGreaterThanOrEqual(28);
     await page.screenshot({
-      path: `test-artifacts/v07-host-six-options-${viewport.width}.png`,
+      path: `test-artifacts/v081-host-six-options-${viewport.width}.png`,
       fullPage: false,
     });
   }
@@ -976,6 +1002,9 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
     { width: 768, height: 1024 },
   ]) {
     await player.setViewportSize(viewport);
+    await player.screenshot({
+      path: `test-artifacts/v081-player-${viewport.width}.png`,
+    });
     await expect
       .poll(() =>
         player
@@ -983,6 +1012,19 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
           .evaluate((el) => el.scrollHeight <= el.clientHeight + 2),
       )
       .toBe(true);
+    if (viewport.width >= 1000) {
+      expect(
+        await player
+          .locator("#playerTitle")
+          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+      ).toBeGreaterThanOrEqual(36);
+      expect(
+        await player
+          .locator("#playerOptions button")
+          .first()
+          .evaluate((el) => parseFloat(getComputedStyle(el).fontSize)),
+      ).toBeGreaterThanOrEqual(28);
+    }
   }
   await page.locator("#toggleLeaderboard").click();
   await expect(player.locator("#playerLeaderboard")).toBeVisible();
@@ -1023,6 +1065,206 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await page.locator("#endGame").click();
   await expect(page.locator("#nextQuestion")).toBeDisabled();
   await expect(page.locator("#hostResults .leaderboard")).toHaveCount(1);
+  // v0.8.1: delayed/failed images, snapshot isolation, DOM reuse and host-only grants.
+  await page.locator("#closeGame").click();
+  await page.setViewportSize({ width: 1366, height: 768 });
+  const preloadFixture = await page.evaluate(async () => {
+    const media = [];
+    for (let i = 0; i < 3; i++) {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 240;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = ["#e9e0ff", "#d7f4ec", "#fff0c7"][i];
+      ctx.fillRect(0, 0, 640, 240);
+      ctx.fillStyle = "#302349";
+      ctx.font = "bold 80px sans-serif";
+      ctx.fillText("Image " + (i + 1), 140, 150);
+      const blob = await new Promise((resolve) =>
+        canvas.toBlob(resolve, "image/png"),
+      );
+      const response = await fetch("/api/media", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-File-Name": `Preload-${i}.png`,
+        },
+        body: blob,
+      });
+      if (!response.ok) throw Error("Preload media upload failed");
+      media.push(await response.json());
+    }
+    const question = (i) => ({
+      type: "choice",
+      text: "Image " + (i + 1) + " — prepared in advance",
+      options: ["First answer", "Second answer"],
+      correct: 0,
+      seconds: 120,
+      points: 1000,
+      media: media[Math.min(i, 2)].url,
+    });
+    const quiz = {
+      title: "Image readiness test",
+      music: "",
+      rounds: [
+        { title: "First", questions: [question(0), question(1)] },
+        { title: "Next", questions: [question(2), question(3)] },
+      ],
+    };
+    const response = await fetch("/api/quizzes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(quiz),
+    });
+    if (!response.ok) throw Error("Preload quiz creation failed");
+    return { quiz: await response.json(), media: media.map((x) => x.url) };
+  });
+  const [imageA, imageB, imageC] = preloadFixture.media;
+  const countImage = (path) =>
+    imageRequests.filter((url) => new URL(url).pathname === path).length;
+  let failCurrentReload = false;
+  let releaseNextImage;
+  const nextImageGate = new Promise((resolve) => {
+    releaseNextImage = resolve;
+  });
+  await page.route("**" + imageB + "?*", async (route) => {
+    await nextImageGate;
+    if (failCurrentReload) {
+      failCurrentReload = false;
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  let lastImageAttempts = 0;
+  await page.route("**" + imageC + "?*", (route) =>
+    ++lastImageAttempts === 1 ? route.abort("failed") : route.continue(),
+  );
+  await page.reload();
+  await page.locator('.nav-item[data-view="quizzes"]').click();
+  await page
+    .locator(".library-card")
+    .filter({ hasText: "Image readiness test" })
+    .getByRole("button", { name: "Host game" })
+    .click();
+  await expect(page.locator("#hostImageStatus")).toHaveText(
+    "First image ready",
+  );
+  const warmA = countImage(imageA);
+  expect(countImage(imageB)).toBe(0); // Only first image in the lobby.
+  // Editing the saved quiz must not replace the running room's next image.
+  await page.evaluate(async ({ quiz, media }) => {
+    quiz.rounds[0].questions[1].media = media[2];
+    const response = await fetch("/api/quizzes/" + quiz.id, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(quiz),
+    });
+    if (!response.ok) throw Error("Snapshot edit failed");
+  }, preloadFixture);
+  const privatePlayerMessages = [];
+  player.on("websocket", (ws) =>
+    ws.on("framereceived", (frame) =>
+      privatePlayerMessages.push(String(frame.payload)),
+    ),
+  );
+  const privateCode = await page.locator("#hostCode").textContent();
+  await player.setViewportSize({ width: 390, height: 844 });
+  await player.goto("/join?code=" + privateCode);
+  await player.getByLabel("Your nickname").fill("Privacy player");
+  await player.getByRole("button", { name: "Join game" }).click();
+  await expect(page.locator("#playerCount")).toHaveText("1");
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(countImage(imageA)).toBe(warmA); // Reused, not re-downloaded at Start.
+  await expect(page.locator("#hostImageStatus")).toHaveText(
+    "Next image loading…",
+  );
+  await expect.poll(() => countImage(imageB)).toBe(1);
+  expect(countImage(imageC)).toBe(0);
+  await player.evaluate(() => send("refresh_images"));
+  await expect(player.locator("#toast")).toContainText("not available");
+  const playerWire = privatePlayerMessages.join("\n");
+  expect(playerWire).not.toContain("host_images");
+  expect(playerWire).not.toContain(imageB);
+  expect(playerWire).not.toContain(imageC);
+  await expect(page.locator("#hostImageStatus")).toContainText(
+    "Next image still loading",
+    { timeout: 20000 },
+  );
+  await expect(
+    page
+      .locator("#hostImageStatus")
+      .getByRole("button", { name: "Retry", exact: true }),
+  ).toBeEnabled();
+  releaseNextImage();
+  await expect(page.locator("#hostImageStatus")).toHaveText("Next image ready");
+  const preparedB = await page.evaluateHandle(
+    (path) => hostImageCache.get(path).image,
+    imageB,
+  );
+  await page.locator("#nextQuestion").click(); // Reveal A.
+  await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
+  await page.locator("#nextQuestion").click(); // Start B; prepare C (simulated failure).
+  await expect(page.locator("#hostQuestion")).toContainText("Image 2");
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(
+    await preparedB.evaluate(
+      (img) => img === document.querySelector("#hostMedia img"),
+    ),
+  ).toBe(true);
+  expect(countImage(imageB)).toBe(1);
+  await expect(page.locator("#hostImageStatus")).toContainText(
+    "Next image unavailable",
+  );
+  expect(await page.evaluate(() => hostImageCache.size)).toBe(2);
+  expect(await page.evaluate((path) => hostImageCache.has(path), imageA)).toBe(
+    false,
+  );
+  await page
+    .locator("#hostImageStatus")
+    .getByRole("button", { name: "Retry", exact: true })
+    .click();
+  await expect(page.locator("#hostImageStatus")).toHaveText("Next image ready");
+  expect(countImage(imageC)).toBe(2);
+  // Reload rebuilds the current/next window once and preserves the server snapshot.
+  failCurrentReload = true;
+  await page.reload();
+  await expect(page.locator("#hostQuestion")).toContainText("Image 2");
+  await expect(page.locator("#hostMedia")).toContainText(
+    "Image could not load.",
+  );
+  await page
+    .locator("#hostMedia")
+    .getByRole("button", { name: "Retry image" })
+    .click();
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  await expect(page.locator("#hostImageStatus")).toHaveText("Next image ready");
+  expect(countImage(imageB)).toBe(3);
+  expect(await page.evaluate(() => hostImageCache.size)).toBe(2);
+  const warmC = countImage(imageC);
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#hostRound")).toHaveText("NEXT ROUND");
+  await expect(page.locator("#hostImageStatus")).toHaveText("Next image ready");
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#hostQuestion")).toContainText("Image 3");
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(countImage(imageC)).toBe(warmC);
+  expect(await page.evaluate(() => hostImageCache.size)).toBe(1); // Shared image deduplicated.
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#nextQuestion")).not.toHaveText("Reveal answers");
+  await page.locator("#nextQuestion").click();
+  await expect(page.locator("#hostQuestion")).toContainText("Image 4");
+  await expect(page.locator("#hostMedia img")).toBeVisible();
+  expect(countImage(imageC)).toBe(warmC);
+  await page.locator("#endGame").click();
+  await expect(page.locator("#nextQuestion")).toBeDisabled();
+  expect(await page.evaluate(() => hostImageCache.size)).toBe(0);
+  await expect(page.locator("#hostImageStatus")).toBeHidden();
+  await preparedB.dispose();
+  await page.unroute("**" + imageB + "?*");
+  await page.unroute("**" + imageC + "?*");
+
   // v0.8: visual authoring controls and a real timed/shuffled publication.
   await page.locator("#closeGame").click();
   await page.setViewportSize({ width: 1440, height: 960 });

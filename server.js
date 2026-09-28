@@ -896,7 +896,7 @@ async function startQuestion(g) {
 function sync(ws, g, type, extra = {}) {
   send(ws, type, {
     game: state(g),
-    question: g.status === "question" ? question(g) : null,
+    question: ["question", "results"].includes(g.status) ? question(g) : null,
     result: g.status === "results" ? result(g) : null,
     leaderboard: g.status === "ended" ? ranking(g) : null,
     serverNow: Date.now(),

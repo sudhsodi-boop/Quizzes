@@ -74,7 +74,7 @@
         if (
           !requireHost() ||
           !confirm(
-            "Publish a snapshot of this quiz for 24 hours? Anyone with the link can attempt it once per browser. Correct answers appear after closing.",
+            "Publish a snapshot of this quiz for 24 hours? Anyone with the link can attempt it once per browser. Correct answers and points appear after each submission. Finished participants can see a leaderboard of completed attempts.",
           )
         )
           return;
@@ -94,7 +94,7 @@
       if (
         b.dataset.closePublication &&
         confirm(
-          "Close this publication now? Participants can no longer submit, and their correct answers will become available.",
+          "Close this publication now? Participants can no longer submit. Their saved results remain available.",
         )
       ) {
         await api(
@@ -304,7 +304,8 @@
       musicRetry = 0,
       polling = false,
       submitting = false,
-      actionRevision = 0;
+      actionRevision = 0,
+      feedbackIndex = null;
     function soundStatus() {
       const button = $("#enablePublishedSound"),
         status = $("#publishedSoundStatus");
@@ -359,6 +360,7 @@
         if (
           !publicState ||
           state.closed ||
+          state.attempt?.completed ||
           state.attempt?.cursor !== publicState.attempt?.cursor ||
           state.attempt?.completed !== publicState.attempt?.completed
         )
@@ -403,6 +405,21 @@
         $("#retryPublished").onclick = refresh;
       }
     }
+    function solutionHTML(s) {
+      const yours =
+        s.yourAnswer === null
+          ? "Skipped / not submitted"
+          : s.type === "text"
+            ? s.yourAnswer
+            : Array.isArray(s.yourAnswer)
+              ? s.yourAnswer.map((index) => s.options[index]).join(" + ")
+              : s.options[s.yourAnswer];
+      return `<p><b>Correct answer${s.type === "multi" ? "s" : ""}:</b> ${e(s.correct)}</p><p><b>Your answer:</b> ${e(yours)}</p><p class="feedback-points">+${s.pointsEarned.toLocaleString()} / ${s.points.toLocaleString()} points</p>`;
+    }
+    function completedLeaderboard(state) {
+      if (!state.attempt?.completed) return "";
+      return `<section class="completed-leaderboard" aria-labelledby="completedRanking"><div class="eyebrow">COMPLETED PARTICIPANTS</div><h2 id="completedRanking">Leaderboard</h2><p>${state.closed ? "Final standings of completed attempts." : "Standings so far — updates as more players finish."} Equal scores share a rank.</p><ol class="leaderboard">${(state.leaderboard || []).map((row) => `<li class="${row.isYou ? "your-ranking" : ""}"><b class="rank">${row.rank}</b><span>${e(row.name)}${row.isYou ? " <small>(you)</small>" : ""}</span><strong>${row.score.toLocaleString()} <small>pts</small></strong></li>`).join("")}</ol></section>`;
+    }
     function render(state) {
       $$("#independentApp audio").forEach((audio) => audio.pause());
       sound.resetDuck();
@@ -412,18 +429,27 @@
       let content = "";
       if (state.closed) {
         content = a
-          ? `<h2>Your result: ${a.score} points</h2><p>${e(a.name)} · ${a.cursor}/${state.total} questions submitted</p>${state.solutions.map((s, i) => `<details class="solution"><summary>${i + 1}. ${e(s.text)} · ${s.pointsEarned} pts</summary><p><b>Correct answer:</b> ${e(s.correct)}</p><p><b>Your answer:</b> ${e(s.yourAnswer === null ? "Not submitted" : s.type === "text" ? s.yourAnswer : Array.isArray(s.yourAnswer) ? s.yourAnswer.map((index) => s.options[index]).join(" + ") : s.options[s.yourAnswer])}</p></details>`).join("")}`
+          ? `<h2>Your result: ${a.score} points</h2><p>${e(a.name)} · ${a.cursor}/${state.total} questions submitted</p>${completedLeaderboard(state)}${state.solutions.map((s, i) => `<details class="solution"><summary>${i + 1}. ${e(s.text)} · ${s.pointsEarned} pts</summary>${solutionHTML(s)}</details>`).join("")}`
           : "<h2>This quiz has closed</h2><p>The host is no longer accepting attempts.</p>";
       } else if (!a) {
-        content = `<h2>Play at your own pace</h2><p>${state.total} questions · ${state.rounds} rounds. No speed bonus or per-question countdown. Submit before the closing time.</p><form id="publishedJoin"><label>Your nickname<input name="name" required maxlength="30" autocomplete="nickname"></label><button class="primary-btn" type="submit">Start my attempt</button></form><p class="muted">One attempt per browser, using a cookie. Clearing cookies or using another browser can bypass this limit; it does not verify identity. Answers and score are revealed after closing.</p>`;
+        content = `<h2>Play at your own pace</h2><p>${state.total} questions · ${state.rounds} rounds. No speed bonus or per-question countdown. Submit before the closing time.</p><form id="publishedJoin"><label>Your nickname<input name="name" required maxlength="30" autocomplete="nickname"></label><button class="primary-btn" type="submit">Start my attempt</button></form><p class="muted">One attempt per browser, using a cookie. Clearing cookies or using another browser can bypass this limit; it does not verify identity. Correct answers and points appear immediately after each submission. Your nickname and score appear to other finishers on the leaderboard.</p>`;
+      } else if (feedbackIndex !== null && state.solutions?.[feedbackIndex]) {
+        const s = state.solutions[feedbackIndex];
+        content = `<section class="answer-feedback" aria-labelledby="feedbackHeading"><div class="eyebrow">QUESTION ${feedbackIndex + 1} / ${state.total} · ANSWER SAVED</div><h2 id="feedbackHeading">${s.credit === 1 ? "Correct!" : s.credit > 0 ? "Partially correct" : s.yourAnswer === null ? "Question skipped" : "Not quite this time"}</h2><h3>${e(s.text)}</h3>${solutionHTML(s)}<p>Total so far: <b>${a.score.toLocaleString()} points</b></p><button id="nextPublished" class="primary-btn">${a.completed ? "See my results & leaderboard" : "Next question →"}</button></section>`;
       } else if (a.completed) {
-        content = `<h2>All done, ${e(a.name)}!</h2><p>Your answers have been saved. Return after closing to see your score and correct answers.</p><button id="refreshAttempt" class="secondary-btn">Refresh results</button>`;
+        content = `<h2>All done, ${e(a.name)}!</h2><p class="final-score">${a.score.toLocaleString()} <span>points</span></p>${completedLeaderboard(state)}<button id="refreshAttempt" class="secondary-btn">Refresh results</button><details class="answer-review"><summary>Review your answers</summary>${state.solutions.map((s, i) => `<details class="solution"><summary>${i + 1}. ${e(s.text)} · ${s.pointsEarned} pts</summary>${solutionHTML(s)}</details>`).join("")}</details>`;
       } else {
-        content = `<div class="eyebrow">${e(q.round)} · QUESTION ${q.index + 1}/${state.total}</div><h2>${e(q.text)}</h2>${mediaHTML(q.media, q.mediaType)}<form id="publishedAnswer">${q.type === "text" ? '<label>Your answer<input name="answer" required maxlength="200" autocomplete="off"></label>' : `<p>${q.type === "multi" ? "Select all correct options. Correct selections earn proportional points; wrong selections subtract proportional points. Minimum zero." : "Choose one answer."}</p><div class="async-options">${q.options.map((o, i) => `<label><input type="${q.type === "multi" ? "checkbox" : "radio"}" name="option" value="${i}" ${q.type === "multi" ? "" : "required"}><span>${e(o)}</span></label>`).join("")}</div>`}<div class="button-row"><button class="primary-btn" type="submit">Submit & continue</button><button class="text-btn" id="skipPublished" type="button">Skip question</button></div></form><p class="muted">Submitted answers cannot be changed. Your progress is saved after each submission.</p>`;
+        content = `<div class="eyebrow">${e(q.round)} · QUESTION ${q.index + 1}/${state.total}</div><h2>${e(q.text)}</h2>${mediaHTML(q.media, q.mediaType)}<form id="publishedAnswer">${q.type === "text" ? '<label>Your answer<input name="answer" required maxlength="200" autocomplete="off"></label>' : `<p>${q.type === "multi" ? "Select all correct options. Correct selections earn proportional points; wrong selections subtract proportional points. Minimum zero." : "Choose one answer."}</p><div class="async-options">${q.options.map((o, i) => `<label><input type="${q.type === "multi" ? "checkbox" : "radio"}" name="option" value="${i}" ${q.type === "multi" ? "" : "required"}><span>${e(o)}</span></label>`).join("")}</div>`}<div class="button-row"><button class="primary-btn" type="submit">Submit answer</button><button class="text-btn" id="skipPublished" type="button">Skip question</button></div></form><p class="muted">Submitted answers cannot be changed. Your progress is saved after each submission.</p>`;
       }
       $("#independentApp").innerHTML =
         `<div class="independent-brand">Quizzes <span>ON YOUR TIME</span></div><section class="panel"><div class="eyebrow">${state.closed ? "CLOSED" : "SELF-PACED QUIZ"}</div><h1>${e(state.title)}</h1><p>${e(state.description || "")}</p><p class="publication-deadline">${state.closed ? "Closed" : "Closes"} ${e(new Date(state.closes).toLocaleString())}</p>${state.music && !state.closed && !a?.completed ? `<div class="publication-music"><button type="button" class="secondary-btn" id="enablePublishedSound">Enable sound</button><small id="publishedSoundStatus"></small></div>` : ""}${content}<p id="attemptStatus" role="status"></p></section>`;
       syncMusic(state);
+      if ($("#nextPublished"))
+        $("#nextPublished").onclick = () => {
+          feedbackIndex = null;
+          render(publicState);
+          window.scrollTo(0, 0);
+        };
       if ($("#enablePublishedSound"))
         $("#enablePublishedSound").onclick = () => {
           sound.enable();
@@ -465,12 +491,13 @@
       if (publicState?.music) sound.enable();
       $$("#independentApp button").forEach((b) => (b.disabled = true));
       try {
-        render(
-          await api(endpoint + suffix, {
-            method: "POST",
-            body: JSON.stringify(payload),
-          }),
-        );
+        const state = await api(endpoint + suffix, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        feedbackIndex = suffix === "/answer" ? payload.index : null;
+        render(state);
+        window.scrollTo(0, 0);
       } catch (err) {
         const message = err.message;
         await refresh();

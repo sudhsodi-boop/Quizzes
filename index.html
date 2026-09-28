@@ -169,7 +169,8 @@
                 <h2>Published quizzes</h2>
                 <p class="muted">
                   Participants play independently. One attempt per browser;
-                  answers release after closing.
+                  correct answers appear after each submission, with a
+                  leaderboard after finishing.
                 </p>
               </div>
               <button id="refreshPublications" class="secondary-btn">
@@ -572,6 +573,13 @@
             <h2 id="gameTitle">Your community, connected</h2>
             <p class="muted" id="hostConnection">Connecting…</p>
           </div>
+          <div
+            class="live-participation"
+            aria-label="Live participant activity"
+          >
+            <span><b id="playerCount">0</b> joined</span>
+            <span id="answeredCount" role="status">Waiting for players</span>
+          </div>
           <div class="join-code">
             <span>JOIN THE FUN · GAME CODE</span><b id="hostCode">—</b
             ><button class="text-btn" id="copyJoin">Copy join link</button>
@@ -612,6 +620,8 @@
                 rel="noopener"
                 href="/join"
                 >Open player view ↗</a
+              ><button class="secondary-btn" id="fullscreenGame" type="button">
+                Full screen</button
               ><button class="secondary-btn" id="toggleLeaderboard">
                 Show leaderboard</button
               ><button class="secondary-btn" id="endGame">End game</button
@@ -620,16 +630,6 @@
               </button>
             </div>
           </div>
-          <aside class="players-panel">
-            <div class="players-title">
-              <div>
-                <h3>Players</h3>
-                <p class="muted" id="answeredCount">Waiting for players</p>
-              </div>
-              <b id="playerCount">0</b>
-            </div>
-            <div class="player-list" id="hostPlayers"></div>
-          </aside>
         </div>
       </div>
     </div>
@@ -795,7 +795,8 @@ Answer: B
 Answer: True
 
 3. Finish the phrase: Better ____.
-Answer: together</pre>
+Answer: together</pre
+          >
           <p>
             Alternatively, add an “Answer key:” section with lines such as “1.
             B”. Missing or conflicting answers are left for you to select—not

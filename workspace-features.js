@@ -74,7 +74,7 @@ module.exports = function workspaceFeatures({
       mediaType: q.mediaType,
     };
   }
-  function publicState(pub, attempt) {
+  async function publicState(pub, attempt, tx = db) {
     const quiz = JSON.parse(pub.document),
       questions = flat(pub),
       closed = Date.now() >= Number(pub.closes);
@@ -96,21 +96,49 @@ module.exports = function workspaceFeatures({
         cursor: state.answers.length,
         completed: state.completed,
         closed,
+        score: state.score,
       };
       if (!closed && !state.completed)
         result.question = safeQuestion(
           questions[state.answers.length],
           state.answers.length,
         );
-      if (closed) {
-        result.attempt.score = state.score;
-        result.solutions = questions.map((q, i) => ({
-          ...safeQuestion(q, i),
-          correct: solution(q),
-          yourAnswer: state.answers[i]?.answer ?? null,
-          pointsEarned: state.answers[i]?.points || 0,
-        }));
+      {
+        // Never reveal unsubmitted questions while a publication is open.
+        result.solutions = questions
+          .slice(0, closed ? questions.length : state.answers.length)
+          .map((q, i) => ({
+            ...safeQuestion(q, i),
+            correct: solution(q),
+            yourAnswer: state.answers[i]?.answer ?? null,
+            pointsEarned: state.answers[i]?.points || 0,
+            credit: state.answers[i]?.credit || 0,
+          }));
       }
+    }
+    if (state?.completed) {
+      const rows = await tx
+        .prepare(
+          "SELECT id,name,document,updated FROM attempts WHERE publication_id=? ORDER BY updated ASC,id ASC",
+        )
+        .all(pub.id);
+      // Public rankings contain nicknames and scores only, never another person's answers or tokens.
+      let previousScore = null,
+        rank = 0;
+      result.leaderboard = rows
+        .map((row) => ({ ...row, progress: JSON.parse(row.document) }))
+        .filter((row) => row.progress.completed)
+        .sort((a, b) => b.progress.score - a.progress.score)
+        .map((row, index) => {
+          if (row.progress.score !== previousScore) rank = index + 1;
+          previousScore = row.progress.score;
+          return {
+            rank,
+            name: row.name,
+            score: row.progress.score,
+            isYou: row.id === attempt.id,
+          };
+        });
     }
     return result;
   }
@@ -304,7 +332,7 @@ module.exports = function workspaceFeatures({
             if (own[2] === "extend") {
               if (Number(current.closes) <= now)
                 fail(
-                  "Closed quizzes cannot be reopened because answers may have been revealed.",
+                  "Closed quizzes cannot be reopened. Publish a new quiz to accept new attempts.",
                   409,
                 );
               if (
@@ -385,7 +413,7 @@ module.exports = function workspaceFeatures({
               180 * 24 * 60 * 60,
             ).replace("quizzes_session=", "quizzes_attempt="),
           };
-      return send(res, publicState(pub, attempt), 200, headers);
+      return send(res, await publicState(pub, attempt), 200, headers);
     }
     if (req.method !== "POST") return false;
     if (!b) fail("Allow cookies and reload this page before starting.");
@@ -467,7 +495,7 @@ module.exports = function workspaceFeatures({
           .prepare("UPDATE attempts SET document=?,updated=? WHERE id=?")
           .run(attempt.document, Date.now(), attempt.id);
       } else fail("Action not found.", 404);
-      state = publicState(pub, attempt);
+      state = await publicState(pub, attempt, tx);
     });
     return send(res, state);
   }

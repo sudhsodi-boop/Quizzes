@@ -36,6 +36,8 @@ const features = require("./workspace-features")({
   bounded,
   rate,
   peer,
+  saveQuizEdit,
+  uploadMedia,
 });
 const studio = require("./studio-server")({
   db,
@@ -44,6 +46,7 @@ const studio = require("./studio-server")({
   fail,
   owns,
   validMedia,
+  isSiteAdmin,
   rate,
 });
 const PORT = Number(process.env.PORT || 4173);
@@ -155,6 +158,63 @@ async function data(req) {
     if (e.status) throw e;
     fail("Invalid JSON");
   }
+}
+// Explicitly scoped edits; oversight routes never impersonate another login.
+async function saveQuizEdit(req, res, ownerId, id, actor, oversight = false) {
+  if (oversight && req.headers["if-match"] === undefined)
+    fail(
+      "Reload this quiz before saving; a revision precondition is required.",
+      428,
+    );
+  const input = await data(req);
+  const before = await db
+    .prepare("SELECT document FROM quizzes WHERE id=?")
+    .get(id);
+  if (!before) fail("Quiz not found.", 404);
+  const revision = JSON.parse(before.document)._revision || 0;
+  if (
+    req.headers["if-match"] !== undefined &&
+    req.headers["if-match"] !== `"${revision}"`
+  )
+    fail(
+      "This quiz was saved in another tab. Your draft is kept; reload the saved quiz or save a separate copy.",
+      409,
+    );
+  const q = await validateQuiz(input, ownerId, id);
+  const original = JSON.parse(before.document);
+  if (original._lastAdminEdit) q._lastAdminEdit = original._lastAdminEdit;
+  if (oversight) q._lastAdminEdit = { email: actor.email, at: Date.now() };
+  q._revision = revision + 1;
+  const changed = await db
+    .prepare(
+      "UPDATE quizzes SET document=?,updated=? WHERE id=? AND document=?",
+    )
+    .run(JSON.stringify(q), Date.now(), q.id, before.document);
+  if (!changed.changes)
+    fail(
+      "This quiz changed while saving. Your draft is kept; try a separate copy.",
+      409,
+    );
+  return json(res, 200, q);
+}
+async function uploadMedia(req, res, ownerId, actorId) {
+  rate("upload:" + actorId, 60, 60 * 60 * 1000);
+  const b = await body(req, 10 * 1024 * 1024);
+  const mime = sniff(b);
+  if (!mime) fail("Upload PNG, JPEG, GIF, WebP, MP3, WAV, or OGG.");
+  const id = crypto.randomUUID();
+  const name = String(req.headers["x-file-name"] || "Media").slice(0, 240);
+  await mediaStore.write(id, b, mime);
+  await db.withTransaction(async (tx) => {
+    await tx.prepare("INSERT INTO media VALUES (?,?,?)").run(id, mime, name);
+    await tx
+      .prepare("INSERT INTO ownership VALUES (?,?,?)")
+      .run("media", id, ownerId);
+  });
+  return json(res, 201, {
+    url: "/media/" + id,
+    mime,
+  });
 }
 async function validMedia(value, kind, ownerId) {
   if (!value) return "";
@@ -596,33 +656,7 @@ const server = http.createServer(async (req, res) => {
         if (!(await owns("quizzes", match[1], admin.id)))
           fail("Quiz not found.", 404);
         if (req.method === "PUT") {
-          const input = await data(req);
-          const before = await db
-            .prepare("SELECT document FROM quizzes WHERE id=?")
-            .get(match[1]);
-          if (!before) fail("Quiz not found.", 404);
-          const revision = JSON.parse(before.document)._revision || 0;
-          if (
-            req.headers["if-match"] !== undefined &&
-            req.headers["if-match"] !== `"${revision}"`
-          )
-            fail(
-              "This quiz was saved in another tab. Your draft is kept; reload the saved quiz or save a separate copy.",
-              409,
-            );
-          const q = await validateQuiz(input, admin.id, match[1]);
-          q._revision = revision + 1;
-          const changed = await db
-            .prepare(
-              "UPDATE quizzes SET document=?,updated=? WHERE id=? AND document=?",
-            )
-            .run(JSON.stringify(q), Date.now(), q.id, before.document);
-          if (!changed.changes)
-            fail(
-              "This quiz changed while saving. Your draft is kept; try a separate copy.",
-              409,
-            );
-          return json(res, 200, q);
+          return await saveQuizEdit(req, res, admin.id, match[1], admin);
         }
         if (req.method === "DELETE") {
           await db.prepare("DELETE FROM quizzes WHERE id=?").run(match[1]);
@@ -632,28 +666,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       if (p === "/api/media" && req.method === "POST") {
-        rate("upload:" + admin.id, 60, 60 * 60 * 1000);
-        const b = await body(req, 10 * 1024 * 1024);
-        const mime = sniff(b);
-        if (!mime) fail("Upload PNG, JPEG, GIF, WebP, MP3, WAV, or OGG.");
-        const id = crypto.randomUUID();
-        const name = String(req.headers["x-file-name"] || "Media").slice(
-          0,
-          240,
-        );
-        await mediaStore.write(id, b, mime);
-        await db.withTransaction(async (tx) => {
-          await tx
-            .prepare("INSERT INTO media VALUES (?,?,?)")
-            .run(id, mime, name);
-          await tx
-            .prepare("INSERT INTO ownership VALUES (?,?,?)")
-            .run("media", id, admin.id);
-        });
-        return json(res, 201, {
-          url: "/media/" + id,
-          mime,
-        });
+        return await uploadMedia(req, res, admin.id, admin.id);
       }
       if (p === "/api/reports" && req.method === "DELETE") {
         await db.withTransaction(async (tx) => {
@@ -784,13 +797,12 @@ function state(g) {
     deadline: g.deadline,
     musicState: g.musicState,
     leaderboardVisible: g.leaderboardVisible,
-    upcomingRound:
-      g.status === "round_intro"
-        ? rules.roundLabel(
-            g.questions[g.index + 1].roundIndex,
-            g.questions[g.index + 1].round,
-          )
-        : null,
+    upcomingRound: ["round_intro", "last_question_intro"].includes(g.status)
+      ? rules.roundLabel(
+          g.questions[g.index + 1].roundIndex,
+          g.questions[g.index + 1].round,
+        )
+      : null,
     participants: [...g.players.values()].map((p) => ({
       id: p.id,
       name: p.name,
@@ -947,12 +959,16 @@ function sendHostImages(ws, g, retry = false) {
   send(ws, "host_images", { code: g.code, images, retry });
 }
 async function startQuestion(g) {
-  if (!["lobby", "results", "round_intro"].includes(g.status))
+  if (
+    !["lobby", "results", "round_intro", "last_question_intro"].includes(
+      g.status,
+    )
+  )
     fail("Wait for the current question to finish.");
   if (g.index + 1 >= g.questions.length)
     return await endGame(g, "Quiz completed");
   if (
-    g.status !== "round_intro" &&
+    !["round_intro", "last_question_intro"].includes(g.status) &&
     g.index >= 0 &&
     g.questions[g.index + 1].roundIndex !== current(g).roundIndex
   ) {
@@ -960,6 +976,18 @@ async function startQuestion(g) {
     g.deadline = null;
     g.leaderboardVisible = false;
     broadcast(g, "round_intro", { game: state(g) });
+    return;
+  }
+  const next = g.questions[g.index + 1];
+  const afterNext = g.questions[g.index + 2];
+  if (
+    g.status !== "last_question_intro" &&
+    (!afterNext || afterNext.roundIndex !== next.roundIndex)
+  ) {
+    g.status = "last_question_intro";
+    g.deadline = null;
+    g.leaderboardVisible = false;
+    broadcast(g, "last_question_intro", { game: state(g) });
     return;
   }
   g.index++;

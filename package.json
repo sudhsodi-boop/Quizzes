@@ -1,6 +1,6 @@
 {
   "name": "quizzes-live",
-  "version": "0.9.0-rc.1",
+  "version": "0.9.0-rc.3",
   "private": true,
   "description": "Real-time nonprofit quiz platform prototype",
   "scripts": {

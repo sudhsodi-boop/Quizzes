@@ -397,7 +397,30 @@ function editQuiz(q) {
   draft = structuredClone(q);
   openEditor();
 }
+function oversightQuizPath(q = draft) {
+  return (
+    "/api/oversight/workspaces/" +
+    encodeURIComponent(q._oversightOwner) +
+    "/quizzes/" +
+    encodeURIComponent(q.id)
+  );
+}
 function openEditor() {
+  const oversight = !!draft._oversightOwner;
+  $("#lastAdminEdit").hidden = !draft._lastAdminEdit;
+  $("#lastAdminEdit").textContent = draft._lastAdminEdit
+    ? `Last administrator edit: ${draft._lastAdminEdit.email} · ${new Date(draft._lastAdminEdit.at).toLocaleString()}`
+    : "";
+  $("#oversightEditorNotice").hidden = !oversight;
+  $("#oversightEditorLabel").textContent = oversight
+    ? "ADMIN EDITING · " +
+      draft._oversightLabel +
+      " — Save quiz changes their original. New uploads belong to this workspace. Your recovery draft stays private to your admin account."
+    : "";
+  $("#saveDraftCopy").disabled = oversight;
+  $("#editorSaveDescription").textContent = oversight
+    ? "You are editing another workspace's saved quiz. Published assignments and active rooms stay unchanged."
+    : "Saved to your organization’s database when you select Save.";
   activeEditorQuestion = draft.rounds[0]?.questions[0];
   $("#quizSettings").open = !draft.id;
   dirty = false;
@@ -414,9 +437,11 @@ function openEditor() {
       .join("");
     $("#importSource").textContent = report.sourceText;
   }
-  $("#editorHeading").textContent = draft.id
-    ? "Edit your quiz"
-    : "Create your quiz";
+  $("#editorHeading").textContent = oversight
+    ? "Admin · Full Quiz Studio"
+    : draft.id
+      ? "Edit your quiz"
+      : "Create your quiz";
   $("#quizTitle").value = draft.title;
   $("#quizDescription").value = draft.description;
   $("#saveStatus").textContent = "";
@@ -543,7 +568,7 @@ function buildStudio() {
     settings.append(duplicate);
     const notesLabel = document.createElement("label");
     notesLabel.className = "studio-notes";
-    notesLabel.innerHTML = `<span>Private host notes</span><textarea data-field="notes" rows="4" maxlength="1000" placeholder="Reminders for you, never shown to players">${e(q.notes || "")}</textarea><small>Visible only in your host console.</small>`;
+    notesLabel.innerHTML = `<span>Private host notes</span><textarea data-field="notes" rows="4" maxlength="1000" placeholder="Reminders for you, never shown to players">${e(q.notes || "")}</textarea><small>Private during live play; never shown to participants or the projector.</small>`;
     settings.append(notesLabel);
     columns.replaceWith(canvas, settings);
   }
@@ -755,14 +780,17 @@ async function upload(file) {
   uploadCount++;
   $("#saveQuiz").disabled = true;
   try {
-    return await api("/api/media", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-File-Name": encodeURIComponent(file.name),
+    return await api(
+      draft?._oversightOwner ? oversightQuizPath() + "/media" : "/api/media",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "X-File-Name": encodeURIComponent(file.name),
+        },
+        body: file,
       },
-      body: file,
-    });
+    );
   } finally {
     uploadCount--;
     $("#saveQuiz").disabled = uploadCount > 0;
@@ -795,8 +823,13 @@ async function uploadQuestion(input) {
 $("#musicFile").onchange = async (event) => {
   const file = event.target.files[0];
   if (!file) return;
+  const editing = draft;
   try {
     const m = await upload(file);
+    if (draft !== editing)
+      return showToast(
+        "The editor changed during upload. Reattach the soundtrack in the intended workspace.",
+      );
     if (!m.mime.startsWith("audio/"))
       throw Error("Background music must be an audio file.");
     collectDraft();
@@ -837,22 +870,40 @@ $("#editorForm").onsubmit = async (event) => {
     )
   )
     return showToast("Select correct answers for every multi-answer question.");
+  if (
+    draft._oversightOwner &&
+    !confirm(
+      `Save changes to ${draft._oversightLabel}’s original quiz? Their existing assignments and active rooms will not change.`,
+    )
+  )
+    return;
   $("#saveQuiz").disabled = true;
   $("#saveStatus").textContent = "Saving…";
   $("#editorForm").inert = true;
   try {
     await window.Studio?.beforeSave();
-    const q = await api("/api/quizzes" + (draft.id ? "/" + draft.id : ""), {
-      method: draft.id ? "PUT" : "POST",
-      headers: draft.id ? { "If-Match": `"${draft._revision || 0}"` } : {},
-      body: JSON.stringify(draft),
-    });
+    const oversightOwner = draft._oversightOwner;
+    const q = await api(
+      oversightOwner
+        ? oversightQuizPath()
+        : "/api/quizzes" + (draft.id ? "/" + draft.id : ""),
+      {
+        method: draft.id ? "PUT" : "POST",
+        headers: draft.id ? { "If-Match": `"${draft._revision || 0}"` } : {},
+        body: JSON.stringify(draft),
+      },
+    );
     await window.Studio?.saved();
     draft = q;
     dirty = false;
     await loadWorkspace();
-    showView("quizzes", true);
-    showToast("Quiz saved — ready for your next gathering");
+    showView(oversightOwner ? "settings" : "quizzes", true);
+    if (oversightOwner) await window.AdminStudio?.refresh(oversightOwner);
+    showToast(
+      oversightOwner
+        ? "Saved to the friend’s workspace. Existing assignments and rooms are unchanged."
+        : "Quiz saved — ready for your next gathering",
+    );
   } catch (err) {
     $("#saveStatus").textContent = err.message;
   } finally {
@@ -1216,7 +1267,7 @@ function handleMessage(m) {
     showLiveLeaderboard(m.visible, m.leaderboard);
     return;
   }
-  if (m.type === "round_intro") {
+  if (["round_intro", "last_question_intro"].includes(m.type)) {
     game = m.game;
     renderRoundIntro();
     return;
@@ -1273,7 +1324,8 @@ function handleMessage(m) {
       if (liveQuestion) renderQuestion();
       renderResults(m.result);
     } else if (game.status === "ended") renderEnded(m.leaderboard);
-    else if (game.status === "round_intro") renderRoundIntro();
+    else if (["round_intro", "last_question_intro"].includes(game.status))
+      renderRoundIntro();
     else renderLobby();
     renderPlayers();
     if (game.leaderboardVisible && game.status !== "ended")
@@ -1582,7 +1634,7 @@ setInterval(() => {
     game.status === "question"
       ? Math.max(0, Math.ceil((game.deadline - Date.now() - offset) / 1000)) +
         "s"
-      : ["lobby", "round_intro"].includes(game.status)
+      : ["lobby", "round_intro", "last_question_intro"].includes(game.status)
         ? "READY"
         : game.status === "ended"
           ? "FINISHED"
@@ -1817,7 +1869,7 @@ $("#backupForm").onsubmit = async (event) => {
 };
 
 function setGameStyle(phase) {
-  if (["lobby", "round_intro", "ended"].includes(phase))
+  if (["lobby", "round_intro", "last_question_intro", "ended"].includes(phase))
     currentHostImageKey = null;
   if (phase === "ended") clearHostImages();
   else updateHostImageStatus();
@@ -1992,26 +2044,33 @@ $("#toggleLeaderboard").onclick = () => {
   if (game) send("set_leaderboard", { visible: !game.leaderboardVisible });
 };
 function renderRoundIntro() {
+  const last = game.status === "last_question_intro";
   stopQuestionAudio();
   sound.setPhase("lobby");
-  setGameStyle("round_intro");
+  setGameStyle(game.status);
   showLiveLeaderboard(false, []);
   $("#submitMulti").hidden = true;
   const prefix = participantMode ? "player" : "host";
-  $(`#${prefix}Round`).textContent = "NEXT ROUND";
-  $(`#${prefix}${participantMode ? "Title" : "Question"}`).textContent =
-    game.upcomingRound;
-  $(`#${prefix}Hint`).textContent =
-    "Get ready! The host will start the first question.";
+  $(`#${prefix}Round`).textContent = last ? "LAST QUESTION" : "NEXT ROUND";
+  $(`#${prefix}${participantMode ? "Title" : "Question"}`).textContent = last
+    ? `Last question of ${game.upcomingRound}`
+    : game.upcomingRound;
+  $(`#${prefix}Hint`).textContent = last
+    ? "Make this one count! The host will start the last question."
+    : "Get ready! The host will start the first question.";
   for (const id of ["Options", "Media", "Results"])
     $(`#${prefix}${id}`).innerHTML = "";
   $("#textAnswerForm").hidden = true;
-  $("#hostQuestionNumber").textContent = "ROUND BREAK";
+  $("#hostQuestionNumber").textContent = last ? "ROUND FINALE" : "ROUND BREAK";
   renderPlayers();
   if (participantMode)
-    $("#answerStatus").textContent = "A fresh round. A new chance to climb.";
+    $("#answerStatus").textContent = last
+      ? "Get ready for the last question of this round."
+      : "A fresh round. A new chance to climb.";
   else {
-    $("#nextQuestion").textContent = "Start this round →";
+    $("#nextQuestion").textContent = last
+      ? "Start last question →"
+      : "Start this round →";
     $("#nextQuestion").disabled = false;
   }
 }

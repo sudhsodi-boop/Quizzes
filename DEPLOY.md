@@ -1,4 +1,4 @@
-> **Current candidate:** v0.9.0-rc.1, Professional Hosting & Studio. Use [APPLY-v0.9.0-rc.1.md](APPLY-v0.9.0-rc.1.md). It is not deployed by the assistant and the real participant-image release gate remains pending. Keep the existing free Northflank/Supabase service and strict TLS settings unchanged. Backup format 3 now includes private recovery drafts. No new environment variable or paid resource is required.
+> **Current candidate:** v0.9.0-rc.3, Professional Hosting & Studio. Use [APPLY-v0.9.0-rc.3.md](APPLY-v0.9.0-rc.3.md). It is not deployed by the assistant and the real participant-image release gate remains pending. Keep the existing free Northflank/Supabase service and strict TLS settings unchanged. Backup format 3 now includes private recovery drafts. No new environment variable or paid resource is required.
 
 # Quizzes — get a stable HTTPS testing address
 
@@ -124,4 +124,4 @@ Active games still reside in one server's memory and do not survive a crash or r
 
 Use [APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md), not the fresh-account setup above. Preserve working passwords, database/media settings and CA certificate. Several legacy hosts require an explicit WORKSPACE_OWNER_EMAIL choice before migration. Never roll back to pre-v0.5 code against a multi-workspace database.
 
-For read-only administrator oversight, set `SITE_ADMIN_EMAIL` to your existing main Quizzes login email in your hosting dashboard. Do not change working database/media credentials. Friends cannot assign this role through signup or profile data.
+For full-Studio administrator oversight (saved-quiz viewing/editing; no deletion or impersonated hosting), set `SITE_ADMIN_EMAIL` to your existing main Quizzes login email in your hosting dashboard. Do not change working database/media credentials. Friends cannot assign this role through signup or profile data.

@@ -1,8 +1,20 @@
-# Quizzes · v0.9.0-rc.1 — test candidate
+# Quizzes · v0.9.0-rc.3 — test candidate
 
-A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s read-only oversight. No subscriptions, billing or participant payments.
+A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s full-Studio oversight. No subscriptions, billing or participant payments.
 
-**Deployment status:** Professional Hosting & Studio is implemented and locally tested as a **candidate**, not a production-cleared release. The actual hosted participant-image test remains the release gate. The assistant has not deployed it. Follow **[APPLY-v0.9.0-rc.1.md](APPLY-v0.9.0-rc.1.md)** and **[PARTICIPANT-IMAGE-VALIDATION.md](PARTICIPANT-IMAGE-VALIDATION.md)**. Preserve the existing free service, private storage and strict TLS/CA settings; no new paid resource or environment change.
+**Deployment status:** Professional Hosting & Studio is implemented and locally tested as a **candidate**, not a production-cleared release. The actual hosted participant-image test remains the release gate. The assistant has not deployed it. Follow **[APPLY-v0.9.0-rc.3.md](APPLY-v0.9.0-rc.3.md)** and **[PARTICIPANT-IMAGE-VALIDATION.md](PARTICIPANT-IMAGE-VALIDATION.md)**. Preserve the existing free service, private storage and strict TLS/CA settings; no new paid resource or environment change.
+
+## Administrator full Studio (rc.3)
+
+Use **Settings → Admin oversight → Choose workspace → Open full Studio · view & edit**. This is the normal question editor, including answers, correct-answer controls, media, private notes, round navigation, undo/redo and Preview & test. Save updates the selected friend’s original quiz after confirmation. The friend retains ownership; new uploads belong to that friend; existing published assignments/rooms remain unchanged. A latest-administrator-edit stamp identifies who saved and when. Admin recovery drafts are private to the administrator, not visible to the friend. Main-admin deletion and hosting as another user remain disabled.
+
+This explicitly supersedes older documentation describing admin oversight as read-only. See [APPLY-v0.9.0-rc.3.md](APPLY-v0.9.0-rc.3.md) for permissions and backup limitations.
+
+## Live round announcements (retained from rc.2)
+
+Before the last question of each round, a shared announcement says **Last question of Round N**. The host clicks **Start last question** to reveal it and start its timer together. After the answer/results and round leaderboard, **Next round** shows the next round announcement; **Start this round** proceeds. A one-question round also gets the last-question notice. The final round ends with the final leaderboard, not an extra round announcement.
+
+These are in-app announcements on host, projector and participant screens, not extra browser pop-up windows. They reveal no upcoming question/answer/media and do not wait for images. Rehearsal follows the same flow. See [APPLY-v0.9.0-rc.3.md](APPLY-v0.9.0-rc.3.md).
 
 ## v0.9 candidate — Professional Hosting & Studio
 
@@ -11,7 +23,7 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 - Private server recovery drafts, conflict checks, bounded undo/redo and explicit official Save. Incomplete drafts stay separate from saved quizzes and immutable assignments.
 - Scoped desktop styling while retaining the established participant phone layout, immediate question/timer starts and host-only broadcast music controls.
 - Backup format 3 includes private drafts; restore supports formats 1–3. Main-admin oversight of saved content remains disclosed; friends remain separate.
-- **Not yet cleared:** real original-image/device/network validation, roughly 100-device hosted capacity, physical sound checks and provider build/deployment. See **[RELEASE-v0.9.0-rc.1.md](RELEASE-v0.9.0-rc.1.md)** for executed tests and limits.
+- **Not yet cleared:** real original-image/device/network validation, roughly 100-device hosted capacity, physical sound checks and provider build/deployment. See **[RELEASE-v0.9.0-rc.3.md](RELEASE-v0.9.0-rc.3.md)** for executed tests and limits.
 - Question bank and more useful reports are the next phase, before elaborate game modes.
 
 ### Previous image delivery work retained
@@ -60,7 +72,7 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 - Restore command for a fresh destination; supports v1/v2 backups and refuses to overwrite existing accounts or reports.
 - Publish an immutable quiz snapshot with a chosen closing time (default 24 hours), up to 100 browser attempts; nickname entry, saved submitted progress, provisional/final host results and CSV export. Participants see correct answers and points immediately after each submitted or skipped question, then press Next. Unsubmitted solutions remain private while the quiz is open. After completing, they see nicknames/scores of completed attempts only; equal scores share a competition rank (1, 1, 3). This applies to existing and new publications for all hosts. Deadlines are request-enforced, not dependent on background jobs.
 - One-use friend invitations expire in 24 hours. Friends create separate logins and empty workspaces. Friends cannot view each other’s work; the designated site administrator can view saved quizzes/media/reports and publication results. This access is disclosed in signup and workspace notices. No public signup, account fees, shared editing rights or automatic quiz copying.
-- Optional SITE_ADMIN_EMAIL grants read-only installation oversight to one existing main account. It does not grant mutation of friends’ content, password/recovery access or cross-workspace backups.
+- Optional SITE_ADMIN_EMAIL grants full-Studio oversight to one existing main account: view/edit saved quizzes in their original workspace, upload attachments there, and review/export available results. It does not grant deletion, hosting as another user, password/recovery access, access to another host’s unsaved drafts, or cross-workspace in-app backups.
 - Confirmed deletion of an individual saved live report, all own saved live reports, or a closed publication with its attempts. Source quizzes/media and old backups are kept.
 - Open self-paced publications can be extended to a later deadline (up to one year from now), preserving the link/progress. Closed publications cannot reopen.
 - Linked self-paced background soundtracks loop through questions, with a browser enable-sound gesture, manual question audio ducking and signed-source renewal. No linked track means no added self-paced background music.
@@ -116,7 +128,7 @@ Choose Free accounts, stay within limits, and do not authorize upgrades or payme
 | `INITIAL_ADMIN_PASSWORD` | First-host password, 12–128 characters; remove after first login                                   |
 | `ORGANIZATION_NAME`      | First-host organization name                                                                       |
 | `TRUST_PROXY`            | Set `1` only behind a trusted proxy; uses forwarded scheme and nearest forwarded client address    |
-| `SITE_ADMIN_EMAIL` | Existing main host email authorized for read-only oversight; absent means no site-admin role |
+| `SITE_ADMIN_EMAIL` | Existing main host email authorized for full-Studio oversight; absent means no site-admin role |
 | `WORKSPACE_OWNER_EMAIL` | One-time legacy ownership choice when upgrading an installation with several existing hosts |
 | `DATABASE_PASSWORD` | Optional raw database password override; never set this variable empty |
 | `DATA_DIR`               | Local SQLite/media directory, default `./data`                                                     |

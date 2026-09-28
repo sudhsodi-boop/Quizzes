@@ -265,6 +265,10 @@
   $("#studioUndo").onclick = () => travel(-1);
   $("#studioRedo").onclick = () => travel(1);
   $("#saveDraftCopy").onclick = () => {
+    if (draft?._oversightOwner)
+      return showToast(
+        "Admin oversight edits the original quiz. Copying between workspaces is not enabled.",
+      );
     capture();
     const copy = structuredClone(draft);
     delete copy.id;
@@ -309,7 +313,7 @@
         ? rows
             .map(
               (r) =>
-                `<article class="recovery-row"><div><b>${e(r.title)}</b><small>${e(new Date(r.updated).toLocaleString())} · private recovery</small></div><button class="secondary-btn" data-recover="${e(r.key)}">Recover</button><button class="text-btn" data-remove-draft="${e(r.key)}" data-version="${r.version}">Delete</button></article>`,
+                `<article class="recovery-row"><div><b>${e(r.title)}</b><small>${e(new Date(r.updated).toLocaleString())} · private recovery${r.workspace ? " · Admin edit: " + e(r.workspace) : ""}</small></div><button class="secondary-btn" data-recover="${e(r.key)}">Recover</button><button class="text-btn" data-remove-draft="${e(r.key)}" data-version="${r.version}">Delete</button></article>`,
             )
             .join("")
         : "<p>No recovery drafts. Your saved quizzes are in the library.</p>";

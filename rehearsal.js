@@ -133,6 +133,18 @@
       render();
       return;
     }
+    const next = questions[index + 1],
+      afterNext = questions[index + 2];
+    if (
+      next &&
+      phase !== "last_question_intro" &&
+      (!afterNext || afterNext.roundIndex !== next.roundIndex)
+    ) {
+      phase = "last_question_intro";
+      board = false;
+      render();
+      return;
+    }
     begin();
   }
   function submit(answer) {
@@ -173,17 +185,19 @@
       ? "Hide standings"
       : "Show standings";
     $("#rehearsalAdvance").textContent =
-      phase === "question"
-        ? "Reveal answer"
-        : phase === "lobby"
-          ? "Start question"
-          : phase === "round_intro"
-            ? "Start this round"
-            : phase === "ended"
-              ? "Restart rehearsal"
-              : index + 1 === questions.length
-                ? "Finish rehearsal"
-                : "Next question";
+      phase === "last_question_intro"
+        ? "Start last question"
+        : phase === "question"
+          ? "Reveal answer"
+          : phase === "lobby"
+            ? "Start question"
+            : phase === "round_intro"
+              ? "Start this round"
+              : phase === "ended"
+                ? "Restart rehearsal"
+                : index + 1 === questions.length
+                  ? "Finish rehearsal"
+                  : "Next question";
     $("#rehearsalNotes").textContent = q?.notes
       ? "Private host note: " + q.notes
       : "Private host notes appear here; never on the real projector.";
@@ -192,7 +206,15 @@
       player.innerHTML = `<h2>${phase === "ended" ? "Rehearsal complete" : "Leaderboard"}</h2><p>1. Test player · ${score.toLocaleString()} pts</p>`;
       return;
     }
-    if (phase === "lobby" || phase === "round_intro") {
+    if (["round_intro", "last_question_intro"].includes(phase)) {
+      const title =
+        (phase === "last_question_intro" ? "Last question of " : "") +
+        questions[index + 1].roundLabel;
+      host.innerHTML = `<div class="eyebrow">ROUND ANNOUNCEMENT</div><h2>${e(title)}</h2><p>The host starts the question when ready. No timer is running yet.</p>`;
+      player.innerHTML = `<h2>${e(title)}</h2><p>Get ready! Your question will appear when the host starts it.</p>`;
+      return;
+    }
+    if (phase === "lobby") {
       host.innerHTML = `<div class="eyebrow">${phase === "lobby" ? "LOBBY" : "NEXT ROUND"}</div><h2>${e(phase === "lobby" ? quiz.title : questions[index + 1]?.roundLabel)}</h2><p>One simulated player is ready. No join code is issued.</p>`;
       player.innerHTML =
         "<h2>You’re in!</h2><p>Waiting for your test question.</p>";

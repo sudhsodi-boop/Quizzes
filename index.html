@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
-    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.1" />
+    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.3" />
   </head>
   <body>
     <div class="app-shell" id="hostApp">
@@ -61,8 +61,8 @@
         </nav>
         <p id="workspacePrivacyNotice" class="workspace-privacy-notice" hidden>
           Workspace access: other friends cannot see your content. The
-          designated site administrator can view quizzes and results for
-          oversight.
+          designated site administrator can view and edit saved quizzes and
+          review results for oversight.
         </p>
         <section id="dashboard" class="view active-view">
           <div class="welcome-row">
@@ -194,7 +194,7 @@
               <div>
                 <div class="eyebrow">QUIZ STUDIO</div>
                 <h1 id="editorHeading">Create a quiz</h1>
-                <p class="muted">
+                <p class="muted" id="editorSaveDescription">
                   Saved to your organization’s database when you select Save.
                 </p>
               </div>
@@ -230,6 +230,17 @@
                   Save quiz
                 </button>
               </div>
+            </div>
+            <p id="lastAdminEdit" class="muted" hidden></p>
+            <div
+              id="oversightEditorNotice"
+              class="studio-recovery-strip admin-edit-notice"
+              hidden
+            >
+              <strong id="oversightEditorLabel"></strong
+              ><button type="button" class="secondary-btn" id="backToOversight">
+                Back to admin oversight
+              </button>
             </div>
             <div class="studio-save-strip">
               <span id="draftStatus" role="status"
@@ -367,8 +378,10 @@
               </button>
             </div>
             <p class="muted">
-              Read-only view of saved quizzes, completed live reports and
-              self-paced results. This does not show passwords, private
+              Full Studio access to saved quizzes: view every question, answer
+              and attachment, edit and save to the owner’s workspace. Review
+              live and self-paced results. Deletion and hosting as another user
+              are not enabled. This does not show passwords, private
               backup/recovery codes or a live screen recording.
             </p>
             <label
@@ -380,8 +393,9 @@
             <h2>Invite a friend</h2>
             <p>
               Friends have separate workspaces and cannot see each other’s
-              content. The designated site administrator can view all quizzes
-              and results for oversight. Hosting and storage quotas are shared.
+              content. The designated site administrator can view and edit saved
+              quizzes and review results for oversight. Hosting and storage
+              quotas are shared.
             </p>
             <button class="primary-btn" id="createInvite">
               Create private invitation
@@ -1055,10 +1069,10 @@ Answer: together</pre
       </p>
       <div id="draftRecoveryList"></div>
     </dialog>
-    <script src="/qr-code.js?v=0.9.0-rc.1"></script>
-    <script src="/quiz-sound.js?v=0.9.0-rc.1"></script>
-    <script src="/app.js?v=0.9.0-rc.1"></script>
-    <script src="/extensions.js?v=0.9.0-rc.1"></script>
-    <script src="/professional.js?v=0.9.0-rc.1"></script>
+    <script src="/qr-code.js?v=0.9.0-rc.3"></script>
+    <script src="/quiz-sound.js?v=0.9.0-rc.3"></script>
+    <script src="/app.js?v=0.9.0-rc.3"></script>
+    <script src="/extensions.js?v=0.9.0-rc.3"></script>
+    <script src="/professional.js?v=0.9.0-rc.3"></script>
   </body>
 </html>

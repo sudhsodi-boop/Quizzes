@@ -16,6 +16,8 @@ module.exports = function workspaceFeatures({
   bounded,
   rate,
   peer,
+  saveQuizEdit,
+  uploadMedia,
 }) {
   const signingKey = crypto.randomBytes(32);
   const sig = (id, until) =>
@@ -241,7 +243,42 @@ module.exports = function workspaceFeatures({
     if (p.startsWith("/api/oversight")) {
       const host = await requireUser(req);
       if (!isSiteAdmin(host)) fail("Site administrator access required.", 403);
-      if (req.method !== "GET") fail("Admin oversight is read-only.", 405);
+      const edit = p.match(
+        /^\/api\/oversight\/workspaces\/([a-f0-9-]+)\/quizzes\/([a-f0-9-]+)(\/media)?$/,
+      );
+      if (edit) {
+        const owner = await db
+          .prepare("SELECT id,organization FROM admins WHERE id=?")
+          .get(edit[1]);
+        if (!owner || !(await owns("quizzes", edit[2], owner.id)))
+          fail("Quiz not found.", 404);
+        const stored = await db
+          .prepare("SELECT document FROM quizzes WHERE id=?")
+          .get(edit[2]);
+        if (!stored) fail("Quiz not found.", 404);
+        if (edit[3]) {
+          if (req.method !== "POST") fail("Action not available.", 405);
+          await uploadMedia(req, res, owner.id, host.id);
+          return true;
+        }
+        if (req.method === "GET")
+          return send(res, {
+            ...JSON.parse(stored.document),
+            _oversightOwner: owner.id,
+            _oversightLabel: owner.organization,
+          });
+        if (req.method === "PUT") {
+          rate("oversight-edit:" + host.id, 120, 60000);
+          await saveQuizEdit(req, res, owner.id, edit[2], host, true);
+          return true;
+        }
+        fail(
+          "Deleting or creating another host's quiz is not available in admin oversight.",
+          405,
+        );
+      }
+      if (req.method !== "GET")
+        fail("This oversight action is view-only.", 405);
       if (p === "/api/oversight/workspaces")
         return send(
           res,

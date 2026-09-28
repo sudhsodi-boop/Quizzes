@@ -1,7 +1,7 @@
 "use strict";
 const crypto = require("node:crypto");
 // Private, incomplete editor drafts. Never used as a live/publication snapshot.
-module.exports = ({ db, json, data, fail, owns, rate }) =>
+module.exports = ({ db, json, data, fail, owns, isSiteAdmin, rate }) =>
   async function studio(req, res, p, admin) {
     const match = p.match(/^\/api\/editor-drafts(?:\/([a-zA-Z0-9-]{1,64}))?$/);
     if (!match) return false;
@@ -24,6 +24,7 @@ module.exports = ({ db, json, data, fail, owns, rate }) =>
           version: Number(r.version),
           updated: Number(r.updated),
           title: JSON.parse(r.document).title || "Untitled draft",
+          workspace: JSON.parse(r.document)._oversightLabel || null,
         })),
       );
       return true;
@@ -86,9 +87,25 @@ module.exports = ({ db, json, data, fail, owns, rate }) =>
       doc.rounds.length > 20
     )
       fail("Invalid or oversized draft.");
+    let contentOwner = admin.id;
+    if (doc._oversightOwner !== undefined) {
+      if (
+        !isSiteAdmin(admin) ||
+        typeof doc._oversightOwner !== "string" ||
+        !/^[a-f0-9-]{36}$/.test(doc._oversightOwner) ||
+        !doc.id
+      )
+        fail("Administrator oversight access required.", 403);
+      contentOwner = doc._oversightOwner;
+      if (
+        typeof doc._oversightLabel !== "string" ||
+        doc._oversightLabel.length > 120
+      )
+        fail("Invalid workspace label.");
+    }
     if (
       doc.id &&
-      (doc.id !== key || !(await owns("quizzes", doc.id, admin.id)))
+      (doc.id !== key || !(await owns("quizzes", doc.id, contentOwner)))
     )
       fail("Quiz not found.", 404);
     if (!doc.id && !/^new-[a-f0-9-]{36}$/.test(key))
@@ -196,7 +213,7 @@ module.exports = ({ db, json, data, fail, owns, rate }) =>
             ids.map(() => "?").join(",") +
             ")",
         )
-        .all(admin.id, ...ids);
+        .all(contentOwner, ...ids);
       if (
         media.length !== ids.length ||
         media.some(

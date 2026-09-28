@@ -1,24 +1,24 @@
 # Participant-image release gate — pending
 
-**Candidate: 0.9.0-rc.1**  
+**Candidate: 0.9.0-rc.3**  
 **Current decision: HOLD. No real hosted participant-device results have been supplied.**
 
 The original symptom was that participants saw images **5–10 seconds after the host**. Local cache tests, a fast host image, a successful rehearsal, or the new diagnostic counter do not prove that symptom is fixed.
 
 ## Keep the agreed game behavior
 
-Questions and timers must start immediately. Do not introduce a “Preparing question…” stage, wait for ready counts, alter scores, or hide the delay by granting extra time during this test. The diagnostics are observational only.
+Once the host clicks Start for the actual question, the question and timer must start together immediately. The requested round/last-question announcements occur before that Start and must not be used to wait for images. Do not introduce a “Preparing question…” stage, wait for ready counts, alter scores, or hide the delay by granting extra time during this test. The diagnostics are observational only.
 
 ## 1. Confirm the actual build
 
 - Install the candidate on the existing free service, outside an active event, with a private backup taken first.
-- `/healthz` must show `"version":"0.9.0-rc.1"` and `"ok":true`.
+- `/healthz` must show `"version":"0.9.0-rc.3"` and `"ok":true`.
 - Reopen/hard-refresh host and participant pages. An old tab may still run old JavaScript.
 - Record the build and date/time in `Participant-image-checks.csv`.
 
 ## 2. Use the original problem images and real devices
 
-Create a short test quiz using the same uploaded images that previously arrived late. Include a typical image and the largest/problematic one; include an image as the first question and another later in the quiz. Do not replace everything with tiny synthetic images.
+Create a short test quiz using the same uploaded images that previously arrived late. Include a typical image and the largest/problematic one; include an image as the first question and another later in the quiz. Do not replace everything with tiny synthetic images. Include an ordinary, non-final question in a multi-question round as well, so extra time on an announcement does not hide a cold-image delivery problem.
 
 Use, where available:
 

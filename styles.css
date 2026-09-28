@@ -5945,3 +5945,51 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     justify-self: center;
   }
 }
+/* Shared round announcements: no question/media revealed before host Start. */
+#gameModal[data-phase="last_question_intro"] .game-stage,
+#participantApp[data-phase="last_question_intro"] .participant-card,
+#gameModal[data-phase="round_intro"] .game-stage,
+#participantApp[data-phase="round_intro"] .participant-card {
+  background: linear-gradient(135deg, #eee6fb, #e4effa);
+}
+#gameModal[data-phase="last_question_intro"] #hostQuestion,
+#gameModal[data-phase="round_intro"] #hostQuestion,
+#participantApp[data-phase="last_question_intro"] #playerTitle,
+#participantApp[data-phase="round_intro"] #playerTitle {
+  border-radius: 20px;
+  padding: 30px 22px;
+  box-shadow: 0 12px 40px #38205412;
+}
+.round-announcement {
+  background: #fff;
+  border-radius: 24px;
+  padding: 48px 28px;
+  box-shadow: 0 12px 40px #38205412;
+}
+.admin-edit-notice {
+  background: #fff8df;
+  border: 2px solid #c89c35;
+  color: #43331b;
+  line-height: 1.6;
+}
+.admin-edit-notice strong {
+  flex: 1;
+  min-width: 220px;
+  font-size: 14px;
+}
+.oversight-quiz-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  justify-content: space-between;
+  padding: 18px 0 9px;
+  flex-wrap: wrap;
+}
+.oversight-quiz-actions strong {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+#lastAdminEdit {
+  padding: 8px 18px;
+  overflow-wrap: anywhere;
+}

@@ -59,7 +59,10 @@
       `${game.participants.length} joined · ${game.participants.filter((p) => p.answered).length} answered`;
     const stage = $("#displayStage");
     if (game.status === "ended" || board) stage.innerHTML = ranking();
-    else if (game.status === "lobby" || game.status === "round_intro") {
+    else if (["round_intro", "last_question_intro"].includes(game.status)) {
+      const last = game.status === "last_question_intro";
+      stage.innerHTML = `<section class="projector-lobby round-announcement"><div class="eyebrow">${last ? "ROUND FINALE" : "NEXT ROUND"}</div><h1>${last ? "Last question of " : ""}${escape(game.upcomingRound)}</h1><p>${last ? "Make this one count!" : "A fresh round. A new chance to climb."}</p><p class="muted">The host will start the question. No timer is running yet.</p></section>`;
+    } else if (game.status === "lobby") {
       const join = new URL("/join", location.origin);
       join.searchParams.set("code", game.code);
       stage.innerHTML = `<section class="projector-lobby"><div class="eyebrow">${game.status === "lobby" ? "YOUR SEAT IS WAITING" : "NEXT ROUND"}</div><h1>${escape(game.status === "lobby" ? game.title : game.upcomingRound)}</h1><p>Join with your phone. Enter your code and nickname together.</p><div class="projector-invite"><div id="displayQR" class="join-qr"></div><div><small>GAME CODE</small><strong>${escape(game.code)}</strong><p>${escape(join.origin + "/join")}</p></div></div><p class="muted">The host will start when ready.</p></section>`;
@@ -151,7 +154,7 @@
         board = true;
         rows = m.leaderboard || [];
         render();
-      } else if (m.type === "round_intro") {
+      } else if (["round_intro", "last_question_intro"].includes(m.type)) {
         board = false;
         question = null;
         render();

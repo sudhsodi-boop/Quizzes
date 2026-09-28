@@ -205,9 +205,13 @@
       button.disabled = false;
     }
   };
+  const oversightMedia = (url, type) =>
+    mediaHTML(url, type, true).replace('preload="metadata"', 'preload="none"');
   let oversightGeneration = 0;
+  let oversightWorkspaceData = null;
   async function loadOversight() {
     const generation = ++oversightGeneration;
+    oversightWorkspaceData = null;
     $("#oversightPanel").hidden = !account?.isSiteAdmin;
     $("#oversightContent").innerHTML = "";
     $("#oversightWorkspace").innerHTML = "";
@@ -230,9 +234,9 @@
   }
   document.addEventListener("quizzes:workspace", loadOversight);
   $("#refreshOversight").onclick = loadOversight;
-  $("#oversightWorkspace").onchange = async (event) => {
-    const id = event.target.value,
-      generation = ++oversightGeneration;
+  async function showOversightWorkspace(id) {
+    const generation = ++oversightGeneration;
+    oversightWorkspaceData = null;
     $("#oversightContent").textContent = id ? "Loading workspace…" : "";
     if (!id) return;
     try {
@@ -240,19 +244,20 @@
         "/api/oversight/workspaces/" + encodeURIComponent(id),
       );
       if (generation !== oversightGeneration || !account?.isSiteAdmin) return;
+      oversightWorkspaceData = w;
       $("#oversightContent").innerHTML =
-        `<h3>${e(w.owner.organization)} — read-only</h3><h3>Saved quizzes (${w.quizzes.length})</h3>` +
+        `<h3>${e(w.owner.organization)} — full Studio access</h3><h3>Saved quizzes (${w.quizzes.length})</h3>` +
         w.quizzes
           .map(
             (q) =>
-              `<details class="report-detail"><summary>${e(q.title)} · ${e(summary(q))}</summary><p>${e(q.description || "")}</p>${mediaHTML(q.music, "audio/mpeg")}${q.rounds.map((r, ri) => `<h4>${e(roundTitle(ri, r.title))}</h4>${r.questions.map((question, i) => `<div class="solution"><b>${i + 1}. ${e(question.text)}</b>${question.options ? `<p>${question.options.map(e).join(" · ")}</p>` : ""}<p>Correct: ${e(question.type === "text" ? question.accepted.join(" / ") : (question.type === "multi" ? question.correctAnswers : [question.correct]).map((index) => question.options?.[index] ?? (index === 0 ? "True" : "False")).join(" + "))}</p>${mediaHTML(question.media, question.mediaType)}</div>`).join("")}`).join("")}</details>`,
+              `<div class="oversight-quiz-actions"><strong>${e(q.title)}</strong><button class="primary-btn" data-oversight-edit="${e(q.id)}">Open full Studio · view &amp; edit</button></div><details class="report-detail"><summary>${e(q.title)} · ${e(summary(q))}</summary><p>${e(q.description || "")}</p>${oversightMedia(q.music, "audio/mpeg")}${q.rounds.map((r, ri) => `<h4>${e(roundTitle(ri, r.title))}</h4>${r.questions.map((question, i) => `<div class="solution"><b>${i + 1}. ${e(question.text)}</b>${question.options ? `<p>${question.options.map(e).join(" · ")}</p>` : ""}<p>Correct: ${e(question.type === "text" ? question.accepted.join(" / ") : (question.type === "multi" ? question.correctAnswers : [question.correct]).map((index) => question.options?.[index] ?? (index === 0 ? "True" : "False")).join(" + "))}</p>${oversightMedia(question.media, question.mediaType)}</div>`).join("")}`).join("")}</details>`,
           )
           .join("") +
         `<h3>Completed live reports (${w.reports.length})</h3>` +
         w.reports
           .map(
             (r) =>
-              `<details class="report-detail"><summary>${e(r.title)} · ${e(new Date(r.ended).toLocaleString())}</summary>${leaderboardHTML(r.leaderboard)}</details>`,
+              `<details class="report-detail"><summary>${e(r.title)} · ${e(new Date(r.ended).toLocaleString())}</summary>${leaderboardHTML(r.leaderboard)}<p class="muted">${r.questionsPlayed}/${r.questionCount} questions · ${r.players} players · ${e(r.reason || "")} · Code ${e(r.code || "")}</p><button class="outline-btn" data-oversight-export="${e(r.id)}">Download CSV</button></details>`,
           )
           .join("") +
         `<h3>Self-paced publications (${w.publications.length})</h3>` +
@@ -266,6 +271,65 @@
       if (generation === oversightGeneration)
         $("#oversightContent").textContent = err.message;
     }
+  }
+  $("#oversightWorkspace").onchange = (event) =>
+    showOversightWorkspace(event.target.value);
+  window.AdminStudio = {
+    async refresh(ownerId) {
+      await loadOversight();
+      if (!account?.isSiteAdmin) return;
+      $("#oversightWorkspace").value = ownerId;
+      await showOversightWorkspace(ownerId);
+    },
+  };
+  $("#oversightContent").addEventListener("click", async (event) => {
+    const button = event.target.closest("button");
+    if (!button || !account?.isSiteAdmin || !oversightWorkspaceData) return;
+    if (button.dataset.oversightExport) {
+      const report = oversightWorkspaceData.reports.find(
+        (r) => r.id === button.dataset.oversightExport,
+      );
+      if (report) exportReport(report);
+    }
+    if (button.dataset.oversightEdit) {
+      const owner = oversightWorkspaceData.owner.id,
+        actor = account.id,
+        generation = oversightGeneration;
+      button.disabled = true;
+      try {
+        const quiz = await api(
+          "/api/oversight/workspaces/" +
+            encodeURIComponent(owner) +
+            "/quizzes/" +
+            encodeURIComponent(button.dataset.oversightEdit),
+        );
+        if (
+          account?.id !== actor ||
+          !account?.isSiteAdmin ||
+          generation !== oversightGeneration
+        )
+          return;
+        if (
+          currentView === "editor" &&
+          dirty &&
+          !confirm(
+            "Leave the current unsaved edits? Wait for recovery to be saved first.",
+          )
+        )
+          return;
+        editQuiz(quiz);
+      } catch (err) {
+        showToast(err.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+  });
+  $("#backToOversight").onclick = async () => {
+    const owner = draft?._oversightOwner;
+    showView("settings");
+    if (currentView === "settings" && owner)
+      await window.AdminStudio.refresh(owner);
   };
   $("#closePublicationDialog").onclick = () => $("#publicationDialog").close();
   $("#exportPublication").onclick = () => {
@@ -300,7 +364,7 @@
     const invite = location.hash.slice(1);
     $("#independentApp").hidden = false;
     $("#independentApp").innerHTML =
-      `<div class="independent-brand">Quizzes</div><section class="panel"><h1>Your own quiz workspace</h1><p>Your workspace is separate from other friends. The designated site administrator can view your quizzes and results for oversight.</p><form id="friendSignup"><label>Workspace name<input name="organization" required maxlength="120" autocomplete="organization"></label><label>Email<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>Password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label><button class="primary-btn" type="submit">Create private workspace</button><p id="friendStatus" role="status"></p></form><a href="/">Already registered? Host sign in</a></section>`;
+      `<div class="independent-brand">Quizzes</div><section class="panel"><h1>Your own quiz workspace</h1><p>Your workspace is separate from other friends. The designated site administrator can view and edit your saved quizzes and review your results for oversight.</p><form id="friendSignup"><label>Workspace name<input name="organization" required maxlength="120" autocomplete="organization"></label><label>Email<input name="email" type="email" required maxlength="254" autocomplete="email"></label><label>Password<input name="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password"></label><button class="primary-btn" type="submit">Create private workspace</button><p id="friendStatus" role="status"></p></form><a href="/">Already registered? Host sign in</a></section>`;
     $("#friendSignup").onsubmit = async (event) => {
       event.preventDefault();
       const button = $("button", event.target);

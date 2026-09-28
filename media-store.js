@@ -7,6 +7,7 @@ const remote = !!process.env.SUPABASE_URL;
 const bucket = process.env.SUPABASE_MEDIA_BUCKET || "quizzes-media";
 const folder = path.join(dataDir, "media");
 const key = process.env.SUPABASE_SERVICE_KEY;
+const imageCache = require("./private-image-cache")();
 let base;
 if (remote) {
   let url;
@@ -119,6 +120,7 @@ const ready = (async () => {
 })();
 async function write(id, buffer, mime) {
   safeId(id);
+  imageCache.invalidate(id);
   if (!remote)
     return fs.promises.writeFile(path.join(folder, id), buffer, {
       mode: 0o600,
@@ -129,6 +131,7 @@ async function write(id, buffer, mime) {
     body: buffer,
   });
   if (!r.ok) throw Error("Media upload failed.");
+  imageCache.invalidate(id);
 }
 async function read(id) {
   safeId(id);
@@ -137,8 +140,93 @@ async function read(id) {
   if (!r.ok) throw Error("Media download failed.");
   return Buffer.from(await r.arrayBuffer());
 }
+async function loadSharedImage(id, resize, maxBytes) {
+  const r = await request("/object/authenticated/" + bucket + "/" + id);
+  if (r.status !== 200) {
+    await r.body?.cancel();
+    throw Error("Media is unavailable.");
+  }
+  const length = Number(r.headers.get("content-length"));
+  // Supabase normally supplies the object length. Unknown/encoded/oversized
+  // bodies retain the old streaming path rather than being buffered without a bound.
+  if (
+    !Number.isSafeInteger(length) ||
+    length <= 0 ||
+    length > maxBytes ||
+    (r.headers.get("content-encoding") &&
+      r.headers.get("content-encoding") !== "identity")
+  ) {
+    await r.body?.cancel();
+    throw Object.assign(Error("Stream this image instead."), {
+      code: "IMAGE_STREAM_ONLY",
+    });
+  }
+  resize(length);
+  const buffer = Buffer.alloc(length);
+  const reader = r.body.getReader();
+  let offset = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (offset + value.byteLength > length)
+        throw Error("Invalid image length.");
+      buffer.set(value, offset);
+      offset += value.byteLength;
+    }
+    if (offset !== length) throw Error("Incomplete image download.");
+    return buffer;
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+}
 async function serve(req, res, id, mime) {
   safeId(id);
+  // The server route has already checked owner/session or signed-grant access.
+  // All responses remain private/no-store; this is NOT a browser/public cache.
+  if (
+    remote &&
+    req.method === "GET" &&
+    !req.headers.range &&
+    mime.startsWith("image/")
+  ) {
+    let lease;
+    try {
+      lease = await imageCache.acquire(id, (resize, maxBytes) =>
+        loadSharedImage(id, resize, maxBytes),
+      );
+    } catch (error) {
+      if (error.code !== "IMAGE_STREAM_ONLY") throw error;
+    }
+    if (lease) {
+      if (res.destroyed) {
+        lease.release();
+        return;
+      }
+      const release = () => {
+        res.off("finish", release);
+        res.off("close", release);
+        lease.release();
+      };
+      res.once("finish", release);
+      res.once("close", release);
+      try {
+        res.writeHead(200, {
+          "Content-Type": mime,
+          "Content-Length": lease.buffer.length,
+          "Accept-Ranges": "bytes",
+          "Cache-Control": "private, no-store",
+        });
+        return res.end(lease.buffer);
+      } catch (error) {
+        release();
+        throw error;
+      }
+    }
+  }
   if (remote) {
     const r = await request("/object/authenticated/" + bucket + "/" + id, {
       headers: req.headers.range ? { Range: req.headers.range } : {},

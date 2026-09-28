@@ -1,6 +1,6 @@
 # Quizzes — get a stable HTTPS testing address
 
-**Current status:** the existing Northflank/Supabase installation is running v0.8. For the locally tested v0.8.1 patch, use [APPLY-v0.8.1-update.md](APPLY-v0.8.1-update.md). The fresh-install instructions below are historical guidance, not a request to create new services. No paid resources or configuration changes are needed for this patch.
+**Current status:** use the existing Northflank/Supabase installation. The v0.8.2 participant-image update is locally tested, not deployed by the assistant; follow [APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md). It includes the earlier PC-font/host-preload patch and keeps timers starting immediately. No paid resources or hosting-variable changes are required. Fresh-install instructions below are historical guidance, not a request to create new services.
 
 You chose **free tiers / nonprofit credits only**, a **provider-issued HTTPS address**, and **reliable testing essentials before additional features**. No paid resources are authorized.
 
@@ -114,12 +114,12 @@ If migrating existing preview data, export it first and restore into the fresh S
 
 ## Current boundaries
 
-The owner confirmed the existing Northflank/Supabase installation works after the database CA/TLS fix. v0.8 is now deployed. The v0.8.1 patch has been tested locally and has not yet been deployed. See [RELEASE-v0.8.1.md](RELEASE-v0.8.1.md) for the current test results and [APPLY-v0.8.1-update.md](APPLY-v0.8.1-update.md) for updating the existing free Northflank service. Local PostgreSQL/media-contract tests and simulated players are not proof of hosted capacity or real-device acceptance.
+The owner confirmed the existing Northflank/Supabase installation works after the database CA/TLS fix. v0.8 is now deployed. The v0.8.2 patch has been tested locally and has not been deployed by the assistant. See [RELEASE-v0.8.2.md](RELEASE-v0.8.2.md) for the current test results and [APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md) for updating the existing free Northflank service. Local PostgreSQL/media-contract tests and simulated players are not proof of hosted capacity or real-device acceptance.
 
 Active games still reside in one server's memory and do not survive a crash or restart. A graceful shutdown attempts to save an interrupted report. Keep deployments outside event times and do not run multiple app replicas. Shared-workspace roles, precisely synchronized audio, dedicated event-sound configuration, automated backup scheduling, automated report retention, media cleanup/scanning and full accessibility/security auditing remain future work after the essentials pilot.
 
 ## Updating an existing installation
 
-Use [APPLY-v0.8.1-update.md](APPLY-v0.8.1-update.md), not the fresh-account setup above. Preserve working passwords, database/media settings and CA certificate. Several legacy hosts require an explicit WORKSPACE_OWNER_EMAIL choice before migration. Never roll back to pre-v0.5 code against a multi-workspace database.
+Use [APPLY-v0.8.2-update.md](APPLY-v0.8.2-update.md), not the fresh-account setup above. Preserve working passwords, database/media settings and CA certificate. Several legacy hosts require an explicit WORKSPACE_OWNER_EMAIL choice before migration. Never roll back to pre-v0.5 code against a multi-workspace database.
 
 For read-only administrator oversight, set `SITE_ADMIN_EMAIL` to your existing main Quizzes login email in your hosting dashboard. Do not change working database/media credentials. Friends cannot assign this role through signup or profile data.

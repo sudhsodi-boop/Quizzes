@@ -423,7 +423,7 @@ function openEditor() {
 function mediaHTML(url, type, lazy = false) {
   if (!url) return "";
   return type?.startsWith("image/")
-    ? `<img class="question-media" ${lazy ? 'loading="lazy"' : ""} decoding="async" src="${e(url)}" alt="Question image">`
+    ? `<img class="question-media" ${lazy ? 'loading="lazy"' : 'loading="eager" fetchpriority="high"'} decoding="async" src="${e(url)}" alt="Question image">`
     : `<audio controls preload="metadata" src="${e(url)}" class="question-audio"></audio>`;
 }
 let activeEditorQuestion = null;

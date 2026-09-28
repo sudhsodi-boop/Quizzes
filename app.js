@@ -1089,12 +1089,13 @@ function renderEnded(rows) {
     "Thank you for playing. Here are the final results.";
   $(`#${prefix}Options`).innerHTML = "";
   $(`#${prefix}Media`).innerHTML = "";
-  $(`#${prefix}Results`).innerHTML = participantMode
-    ? podiumHTML(rows || []) + leaderboardHTML(rows || [])
-    : '<p class="session-saved">Session saved. View detailed results in Reports after closing this screen.</p>';
-  if (!participantMode)
+  $(`#${prefix}Results`).innerHTML =
+    podiumHTML(rows || []) + leaderboardHTML(rows || []);
+  if (!participantMode) {
+    $("#hostQuestion").textContent = "Final leaderboard";
     $("#hostHint").textContent =
-      "Thank you for hosting. Players can see their final leaderboard.";
+      "Announce your winners! Results have been saved in Reports.";
+  }
   if (participantMode) {
     $("#textAnswerForm").hidden = true;
     $("#answerStatus").textContent =
@@ -1493,29 +1494,39 @@ $("#moveSelected").onclick = () =>
 $("#submitMulti").onclick = () =>
   submitAnswer([...multiSelection].sort((a, b) => a - b));
 function showLiveLeaderboard(visible, rows) {
-  // The host controls the audience's screen, without displaying scores on their own screen.
-  $("#hostLeaderboard").hidden = true;
-  $("#hostLeaderboard").innerHTML = "";
-  const panel = $("#playerLeaderboard");
+  // One focused standings screen on both devices; never a score sidebar beside a question.
+  const panel = $(participantMode ? "#playerLeaderboard" : "#hostLeaderboard");
   const wasVisible = !panel.hidden;
-  panel.hidden = !participantMode || !visible;
-  $("#playerQuestion").classList.toggle(
-    "leaderboard-only",
-    participantMode && visible,
+  const show = !!visible && game?.status !== "ended";
+  panel.hidden = !show;
+  const questionArea = $(
+    participantMode ? "#playerQuestion" : "#gameModal .stage-question",
   );
-  panel.innerHTML =
-    participantMode && visible
-      ? '<div class="eyebrow">LIVE STANDINGS</div><h2 tabindex="-1">Leaderboard</h2><p class="muted">Total points · Your host will continue shortly.</p>' +
-        leaderboardHTML(rows || [])
-      : "";
-  if (participantMode && visible) {
+  questionArea.classList.toggle("leaderboard-only", show);
+  panel.innerHTML = show
+    ? '<div class="eyebrow">LIVE STANDINGS</div><h2 tabindex="-1">Leaderboard</h2><p class="muted">' +
+      (participantMode
+        ? "Total points · Your host will continue shortly."
+        : "Total points · Announce the standings, then continue the quiz.") +
+      "</p>" +
+      leaderboardHTML(rows || [])
+    : "";
+  if (show) {
     stopQuestionAudio();
-    if (!wasVisible) $("h2", panel).focus({ preventScroll: true });
+    if (participantMode && !wasVisible)
+      $("h2", panel).focus({ preventScroll: true });
   }
-  $("#toggleLeaderboard").textContent = visible
-    ? "Hide player leaderboard"
-    : "Show player leaderboard";
-  $("#toggleLeaderboard").setAttribute("aria-pressed", String(visible));
+  $("#toggleLeaderboard").textContent =
+    game?.status === "ended"
+      ? "Final leaderboard shown"
+      : show
+        ? "Hide leaderboard"
+        : "Show leaderboard";
+  $("#toggleLeaderboard").disabled = game?.status === "ended";
+  $("#toggleLeaderboard").setAttribute(
+    "aria-pressed",
+    String(show || game?.status === "ended"),
+  );
   scheduleLiveFit();
 }
 $("#toggleLeaderboard").onclick = () => {
@@ -1562,8 +1573,8 @@ function fitLiveScreen() {
   root.style.setProperty("--live-media", "200px");
   root.style.setProperty("--live-gap", "14px");
   if (
-    participantMode &&
-    (!$("#playerLeaderboard").hidden || game.status === "ended")
+    game.status === "ended" ||
+    !$(participantMode ? "#playerLeaderboard" : "#hostLeaderboard").hidden
   )
     return;
   for (let step = 0; step <= 12; step++) {

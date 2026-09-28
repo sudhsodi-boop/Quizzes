@@ -3544,7 +3544,7 @@ body:has(#gameModal.open) {
   background: #ece3fa;
   outline: 2px solid #754bb1;
 }
-#hostLeaderboard {
+#hostLeaderboard[hidden] {
   display: none !important;
 }
 .session-saved {
@@ -3836,4 +3836,102 @@ body:has(#gameModal.open) {
 #gameModal .stage-question,
 #playerQuestion {
   overflow-wrap: anywhere;
+}
+
+/* Host-visible standings: a deliberate screen change, not a side panel. */
+#gameModal .stage-question.leaderboard-only > :not(#hostLeaderboard) {
+  display: none !important;
+}
+#gameModal .stage-question.leaderboard-only {
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+#hostLeaderboard {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 12px 0;
+  background: transparent;
+  text-align: left;
+}
+#hostLeaderboard h2 {
+  margin: 10px 0;
+  font:
+    750 clamp(28px, 3vw, 42px) / 1.2 system-ui,
+    sans-serif;
+}
+#hostLeaderboard .leaderboard,
+#hostResults .leaderboard {
+  max-height: none;
+  overflow: visible;
+  width: 100%;
+  max-width: 1000px;
+  margin: 20px auto;
+}
+#hostLeaderboard li,
+#hostResults .leaderboard li {
+  padding: 16px;
+  gap: 16px;
+  font-size: clamp(18px, 2vw, 26px);
+}
+#hostLeaderboard .rank,
+#hostResults .leaderboard .rank {
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+}
+#hostLeaderboard strong,
+#hostResults .leaderboard strong {
+  font-size: clamp(18px, 2vw, 26px);
+}
+#hostLeaderboard small,
+#hostResults .leaderboard small {
+  font-size: 14px;
+}
+#gameModal[data-phase="ended"] #hostQuestionNumber {
+  display: none;
+}
+#gameModal[data-phase="ended"] .stage-question {
+  justify-content: flex-start;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+@media (max-width: 700px) {
+  #hostLeaderboard li,
+  #hostResults .leaderboard li {
+    gap: 10px;
+    padding: 12px 8px;
+  }
+}
+/* Compact, immediately readable winners on the host's announcing screen. */
+#hostResults .podium {
+  min-height: 0;
+  margin: 12px 0;
+  align-items: stretch;
+}
+#hostResults .podium-place {
+  min-height: 0;
+  max-width: 260px;
+  padding: 12px;
+  gap: 4px;
+  border-radius: 12px;
+  animation: none;
+}
+#hostResults .podium-place b {
+  font-size: 18px;
+}
+#hostResults .podium-place small {
+  font-size: 14px;
+}
+#hostResults .podium-place strong {
+  font-size: 28px;
+}
+#hostResults .podium-place > span {
+  font-size: 20px;
+}
+#hostResults .celebration {
+  display: none;
 }

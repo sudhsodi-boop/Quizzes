@@ -1,8 +1,16 @@
-# Quizzes · v0.8
+# Quizzes · v0.8.1
 
 A responsive live and self-paced quiz app for nonprofit use, with invitation-based separate host workspaces and a designated site administrator’s read-only oversight. No subscriptions, billing or participant payments.
 
-**Deployment status:** the existing Northflank/Supabase installation is running with the verified TLS configuration fix. This v0.8 update is locally tested, not yet deployed. Follow **[APPLY-v0.8-update.md](APPLY-v0.8-update.md)**. Keep the same free service, external database, private media and environment variables. Never send passwords or API keys in chat.
+**Deployment status:** the existing Northflank/Supabase installation is running v0.8 with the verified TLS configuration. This v0.8.1 patch is locally tested, not yet deployed. Follow **[APPLY-v0.8.1-update.md](APPLY-v0.8.1-update.md)**. Keep the same free service, external database, private media and environment variables. Never send passwords or API keys in chat.
+
+## v0.8.1 Desktop readability and host image preparation
+
+- Live PC questions start at 48–56px and answer text at 32–34px. The fit routine reduces image space first; desktop text does not shrink below 36px/28px. Extremely long content remains scrollable, not clipped. Phone text sizing is unchanged.
+- Host prepares the first image in the lobby, then the immediately following question's image during the current question. Ready images are decoded and reused without a second request at the transition. The host sees loading/ready status and can retry failed or slow images.
+- At most two distinct images are kept in host memory, from the running game's immutable snapshot. Future image URLs are sent only to the authenticated room host, never players. Private media authorization and no-store headers remain unchanged; no server image cache or public bucket is introduced.
+- Timers still start when the host starts a question; they do not wait for downloads. Wait for “First image ready” before starting when appropriate. Very large files/slow networks can still take time, especially after a reload.
+- No database migration, dependency change, paid resource, or hosting-variable change.
 
 ## v0.8 Studio and assignments
 
@@ -39,7 +47,7 @@ A responsive live and self-paced quiz app for nonprofit use, with invitation-bas
 
 ## Current behavior and scoring
 
-See **[APPLY-v0.8-update.md](APPLY-v0.8-update.md)** for the feature walkthrough, safe update steps and post-deployment checks. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
+See **[APPLY-v0.8.1-update.md](APPLY-v0.8.1-update.md)** for safe update steps and post-deployment checks; the [v0.8 guide](APPLY-v0.8-update.md) covers Studio and assignments. Multi-answer credit is `max(0, correct-selected/correct-total − wrong-selected/wrong-total)`; the wrong term is zero if there are no incorrect options. Multiply by live speed-adjusted points or self-paced fixed points. A correct selection plus an incorrect selection can cancel out; points never go negative. Round leaderboards are cumulative. Document formatting is a review hint, not guaranteed answer truth: all-option styling and conflicting keys stay unresolved. Scans, flattened/unusual PDF highlighting, every Word numbering/style convention and partial emphasis are not guaranteed.
 
 ## Database authentication troubleshooting
 

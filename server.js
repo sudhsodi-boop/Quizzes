@@ -861,6 +861,20 @@ async function endGame(g, reason = "Host ended the game") {
     10 * 60 * 1000,
   );
 }
+// Only the authenticated room host receives future image grants. Never put these
+// in state(), question(), or broadcast payloads. Use the immutable room snapshot.
+function sendHostImages(ws, g, retry = false) {
+  if (ws !== g.host || ws?.role !== "host") return;
+  const indices =
+    g.status === "ended" ? [] : g.index < 0 ? [0] : [g.index, g.index + 1];
+  const images = indices.flatMap((index) => {
+    const q = g.questions[index];
+    return q?.media && q.mediaType?.startsWith("image/")
+      ? [{ index, url: features.mediaURL(q.media) }]
+      : [];
+  });
+  send(ws, "host_images", { code: g.code, images, retry });
+}
 async function startQuestion(g) {
   if (!["lobby", "results", "round_intro"].includes(g.status))
     fail("Wait for the current question to finish.");
@@ -887,6 +901,7 @@ async function startQuestion(g) {
     p.answered = false;
     p.pending = 0;
   }
+  sendHostImages(g.host, g);
   broadcast(g, "question_started", {
     game: state(g),
     question: question(g),
@@ -903,6 +918,7 @@ function sync(ws, g, type, extra = {}) {
     visibleLeaderboard: g.leaderboardVisible ? ranking(g) : [],
     ...extra,
   });
+  sendHostImages(ws, g);
 }
 function normalize(s) {
   return s
@@ -1089,6 +1105,7 @@ wss.on("connection", (ws, req) => {
         if (ws.readyState !== 1) return;
         if (admin.id !== g.adminId || g.host !== ws)
           fail("Not authorized.", 403);
+        if (msg.type === "refresh_images") return sendHostImages(ws, g, true);
         if (msg.type === "set_music") {
           if (
             typeof msg.playing !== "boolean" ||

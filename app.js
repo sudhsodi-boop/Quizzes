@@ -136,6 +136,7 @@ $("#authButton").onclick = async () => {
     await api("/api/logout", { method: "POST" });
     manualClose = true;
     sound.stop();
+    clearHostImages();
     socket?.close();
     forgetConnection();
     game = null;
@@ -947,6 +948,7 @@ function launchQuiz(id) {
     return;
   }
   forgetConnection();
+  clearHostImages();
   game = null;
   $("#gameModal").classList.add("open");
   $("#gameTitle").textContent = "Creating your game…";
@@ -971,7 +973,217 @@ window.addEventListener("quiz:refresh-music", () => {
     send("refresh_music");
   }
 });
+// Keep at most the current and next image in host memory. Reattach the decoded
+// Image itself: private media deliberately uses no-store, so a new <img> would
+// otherwise download it again. Audio and participant loading are unchanged.
+const hostImageCache = new Map();
+let hostImageGameCode = null,
+  currentHostImageKey = null;
+function hostImageKey(url) {
+  try {
+    const u = new URL(url, location.href);
+    return u.origin === location.origin &&
+      /^\/media\/[a-f0-9-]+$/.test(u.pathname)
+      ? u.pathname
+      : null;
+  } catch {
+    return null;
+  }
+}
+function releaseHostImage(entry) {
+  entry.disposed = true;
+  clearTimeout(entry.timer);
+  entry.image.onload = entry.image.onerror = null;
+  if (!entry.image.isConnected || entry.state !== "ready")
+    entry.image.removeAttribute("src");
+}
+function clearHostImages() {
+  for (const entry of hostImageCache.values()) releaseHostImage(entry);
+  hostImageCache.clear();
+  currentHostImageKey = hostImageGameCode = null;
+  const status = $("#hostImageStatus");
+  if (status) {
+    status.hidden = true;
+    status.replaceChildren();
+  }
+}
+function retryHostImages() {
+  if (!send("refresh_images")) showToast("Reconnect to retry the image.");
+}
+function createHostImage(url, index) {
+  const key = hostImageKey(url);
+  if (!key) return null;
+  const image = new Image();
+  image.alt = "Question image";
+  image.className = "question-media";
+  image.decoding = "async";
+  image.loading = "eager";
+  image.fetchPriority = index <= Math.max(0, game?.index ?? 0) ? "high" : "low";
+  const entry = {
+    key,
+    image,
+    state: "loading",
+    indices: [index],
+    disposed: false,
+  };
+  hostImageCache.set(key, entry);
+  const changed = () => {
+    if (entry.disposed) return;
+    if (currentHostImageKey === key) paintHostImage(entry);
+    updateHostImageStatus();
+    scheduleLiveFit();
+  };
+  image.onload = async () => {
+    try {
+      await image.decode();
+    } catch {
+      /* Some browsers already decoded on load. */
+    }
+    if (entry.disposed) return;
+    clearTimeout(entry.timer);
+    entry.state = image.naturalWidth ? "ready" : "error";
+    changed();
+  };
+  image.onerror = () => {
+    if (entry.disposed) return;
+    clearTimeout(entry.timer);
+    entry.state = "error";
+    changed();
+  };
+  entry.timer = setTimeout(() => {
+    if (entry.state === "loading") {
+      entry.state = "slow";
+      changed();
+    }
+  }, 15000);
+  image.src = url;
+  return entry;
+}
+function primeHostImages(message) {
+  if (
+    participantMode ||
+    !game ||
+    message.code !== game.code ||
+    game.status === "ended"
+  )
+    return;
+  if (hostImageGameCode !== game.code) clearHostImages();
+  hostImageGameCode = game.code;
+  const wanted = new Map();
+  for (const item of (message.images || []).slice(0, 2)) {
+    const key = hostImageKey(item.url);
+    if (!key || !Number.isInteger(item.index)) continue;
+    if (!wanted.has(key)) wanted.set(key, { url: item.url, indices: [] });
+    wanted.get(key).indices.push(item.index);
+  }
+  for (const [key, entry] of hostImageCache) {
+    if (
+      !wanted.has(key) ||
+      (message.retry && ["error", "slow"].includes(entry.state))
+    ) {
+      releaseHostImage(entry);
+      hostImageCache.delete(key);
+    }
+  }
+  for (const [key, item] of wanted) {
+    const entry =
+      hostImageCache.get(key) || createHostImage(item.url, item.indices[0]);
+    entry.indices = item.indices;
+    if (currentHostImageKey === key) paintHostImage(entry);
+  }
+  updateHostImageStatus();
+  scheduleLiveFit();
+}
+function paintHostImage(entry) {
+  if (entry.disposed || currentHostImageKey !== entry.key) return;
+  const area = $("#hostMedia");
+  entry.image.hidden = entry.state !== "ready";
+  area.replaceChildren(entry.image);
+  if (entry.state !== "ready") {
+    const notice = document.createElement("div");
+    notice.className = "host-image-notice";
+    notice.setAttribute("role", "status");
+    notice.textContent =
+      entry.state === "error"
+        ? "Image could not load. "
+        : entry.state === "slow"
+          ? "Image is still loading. "
+          : "Loading question image…";
+    if (["error", "slow"].includes(entry.state)) {
+      const retry = document.createElement("button");
+      retry.className = "secondary-btn";
+      retry.textContent = "Retry image";
+      retry.onclick = retryHostImages;
+      notice.append(retry);
+    }
+    area.append(notice);
+  }
+}
+function renderHostImage(q) {
+  const key = hostImageKey(q.media);
+  if (participantMode || !q.mediaType?.startsWith("image/") || !key) {
+    currentHostImageKey = null;
+    $("#hostMedia").innerHTML = mediaHTML(q.media, q.mediaType);
+    return;
+  }
+  if (hostImageGameCode !== game.code) clearHostImages();
+  hostImageGameCode = game.code;
+  currentHostImageKey = key;
+  // Also works with a reconnect/current question arriving before the preload message.
+  for (const [cachedKey, entry] of hostImageCache) {
+    if (cachedKey !== key && !entry.indices.includes(q.index + 1)) {
+      releaseHostImage(entry);
+      hostImageCache.delete(cachedKey);
+    }
+  }
+  const entry = hostImageCache.get(key) || createHostImage(q.media, q.index);
+  entry.image.fetchPriority = "high";
+  paintHostImage(entry);
+  updateHostImageStatus();
+}
+function updateHostImageStatus() {
+  if (participantMode) return;
+  let status = $("#hostImageStatus");
+  if (!status) {
+    status = document.createElement("span");
+    status.id = "hostImageStatus";
+    status.setAttribute("role", "status");
+    $("#hostSound").append(status);
+  }
+  const next = game?.index < 0 ? 0 : (game?.index ?? 0) + 1;
+  const entry = [...hostImageCache.values()].find((x) =>
+    x.indices.includes(next),
+  );
+  status.hidden = !entry || game?.status === "ended";
+  if (status.hidden) {
+    status.replaceChildren();
+    return;
+  }
+  status.dataset.state = entry.state;
+  const label = game.index < 0 ? "First image" : "Next image";
+  status.textContent =
+    label +
+    (entry.state === "ready"
+      ? " ready"
+      : entry.state === "error"
+        ? " unavailable "
+        : entry.state === "slow"
+          ? " still loading "
+          : " loading…");
+  if (["error", "slow"].includes(entry.state)) {
+    const retry = document.createElement("button");
+    retry.className = "text-btn";
+    retry.textContent = "Retry";
+    retry.onclick = retryHostImages;
+    status.append(retry);
+  }
+}
+
 function handleMessage(m) {
+  if (m.type === "host_images") {
+    primeHostImages(m);
+    return;
+  }
   if (m.serverNow) offset = m.serverNow - Date.now();
   if (m.type === "music_refreshed") {
     loadGameMusic(m.music);
@@ -1157,7 +1369,9 @@ function renderQuestion() {
       : q.type === "multi"
         ? "Select all correct answers, then submit. Wrong selections reduce partial credit."
         : "Choose one answer.";
-  $(`#${prefix}Media`).innerHTML = mediaHTML(q.media, q.mediaType);
+  if (participantMode)
+    $("#playerMedia").innerHTML = mediaHTML(q.media, q.mediaType);
+  else renderHostImage(q);
   $(`#${prefix}Results`).innerHTML = "";
   const options = $(`#${prefix}Options`);
   options.innerHTML = "";
@@ -1560,6 +1774,10 @@ $("#backupForm").onsubmit = async (event) => {
 };
 
 function setGameStyle(phase) {
+  if (["lobby", "round_intro", "ended"].includes(phase))
+    currentHostImageKey = null;
+  if (phase === "ended") clearHostImages();
+  else updateHostImageStatus();
   $("#gameModal").dataset.phase = phase;
   $("#participantApp").dataset.phase = phase;
   scheduleLiveFit();
@@ -1766,8 +1984,13 @@ function fitLiveScreen() {
   const root = participantMode ? $("#participantApp") : $("#gameModal");
   if (!game || (!participantMode && !root.classList.contains("open"))) return;
   const surface = participantMode ? $(".participant-card") : $(".game-stage");
-  root.style.setProperty("--live-question", "40px");
-  root.style.setProperty("--live-option", "24px");
+  // Preserve the established phone/tablet fit. On PC, reclaim image space first,
+  // then make only a modest text reduction; never squeeze to the old 20/16px floor.
+  const desktop = innerWidth >= 1000;
+  const questionSize = desktop ? (innerWidth >= 1600 ? 56 : 48) : 40;
+  const optionSize = desktop ? (innerWidth >= 1600 ? 34 : 32) : 24;
+  root.style.setProperty("--live-question", `${questionSize}px`);
+  root.style.setProperty("--live-option", `${optionSize}px`);
   const mediaSize = participantMode
     ? 200
     : Math.min(440, Math.max(200, innerHeight * 0.42));
@@ -1778,6 +2001,28 @@ function fitLiveScreen() {
     !$(participantMode ? "#playerLeaderboard" : "#hostLeaderboard").hidden
   )
     return;
+  if (desktop) {
+    for (let step = 0; step <= 14; step++) {
+      root.style.setProperty(
+        "--live-media",
+        `${Math.max(120, mediaSize - step * 24)}px`,
+      );
+      root.style.setProperty("--live-gap", `${Math.max(6, 14 - step)}px`);
+      if (surface.scrollHeight <= surface.clientHeight + 2) return;
+    }
+    for (let step = 1; step <= 10; step++) {
+      root.style.setProperty(
+        "--live-question",
+        `${Math.max(36, questionSize - step * 2)}px`,
+      );
+      root.style.setProperty(
+        "--live-option",
+        `${Math.max(28, optionSize - step)}px`,
+      );
+      if (surface.scrollHeight <= surface.clientHeight + 2) return;
+    }
+    return; // Very long questions remain scrollable at readable sizes.
+  }
   for (let step = 0; step <= 12; step++) {
     root.style.setProperty(
       "--live-question",

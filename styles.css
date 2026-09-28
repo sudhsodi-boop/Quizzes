@@ -5234,3 +5234,69 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   white-space: nowrap;
   padding: 6px;
 }
+
+/* v0.8.1: private host image preparation; keep the player phone layout intact. */
+#hostImageStatus {
+  margin-left: auto;
+  font-size: 13px;
+  color: #344e64;
+}
+#hostImageStatus .text-btn {
+  font-size: inherit;
+  padding: 2px 6px;
+}
+.host-image-notice {
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px;
+  color: #344e64;
+  background: #ffffff90;
+  border-radius: 6px;
+}
+@media (min-width: 1000px) {
+  #hostHint {
+    font-size: 16px;
+  }
+  #hostQuestionNumber {
+    font-size: 12px;
+  }
+  #hostRound {
+    font-size: 14px;
+  }
+  #gameModal .stage-controls > * {
+    font-size: 15px;
+  }
+  #gameModal #nextQuestion {
+    font-size: 17px;
+  }
+  #gameModal .join-code b {
+    font-size: 28px;
+  }
+  #gameModal .live-participation b {
+    font-size: 24px;
+  }
+  .live-media-row #hostTimer {
+    font-size: 30px;
+  }
+  .live-answer-counter b {
+    font-size: 32px;
+  }
+  #hostImageStatus {
+    font-size: 14px;
+  }
+}
+@media (min-width: 1000px) {
+  #participantApp[data-phase] .participant-card {
+    padding: 12px 20px;
+  }
+  #playerQuestion #leavePlayer {
+    margin-top: 4px;
+  }
+  #playerQuestion .answer-status {
+    padding: 6px;
+  }
+}

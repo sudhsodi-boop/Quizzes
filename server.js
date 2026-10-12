@@ -53,6 +53,17 @@ const PORT = Number(process.env.PORT || 4173);
 const games = new Map();
 const limits = new Map();
 const SESSION_MS = 12 * 60 * 60 * 1000;
+// Shared NAT venues and sleeping laptops can drop the host mid-event. The
+// default grace period is unchanged; operators may extend it up to 60 minutes
+// with HOST_RECONNECT_MINUTES before an abandoned room is closed and reported.
+const CONNECTS_PER_MINUTE = Math.min(
+  10000,
+  Math.max(50, Number(process.env.CONNECTS_PER_MINUTE) || 1200),
+);
+const ORPHAN_MS =
+  Math.min(60, Math.max(1, Number(process.env.HOST_RECONNECT_MINUTES) || 5)) *
+  60 *
+  1000;
 const setupEnabled =
   process.env.ALLOW_SETUP === "true" && process.env.NODE_ENV !== "production";
 function fail(message, status = 400) {
@@ -774,6 +785,36 @@ function send(ws, type, data = {}) {
 function broadcast(g, type, data = {}) {
   g.clients.forEach((ws) => send(ws, type, data));
 }
+// Event capacity. A full room sends one roster update per join, leave and answer.
+// With 100 players that is ~100 messages of ~10 KB each fanned out to ~101
+// sockets, roughly 100 MB of egress per question on a shared free container.
+// Coalescing caps it at about two updates per interval. Scoring, timers and
+// results are untouched: only the cosmetic "who has answered / who is online"
+// list is throttled, and every phase broadcast still carries a fresh roster.
+const ROSTER_THROTTLE_MS = 700;
+const rosterPending = new Map();
+function clearRoster(g) {
+  const entry = rosterPending.get(g.code);
+  if (!entry) return;
+  rosterPending.delete(g.code);
+  clearTimeout(entry.timer);
+}
+function broadcastRoster(g) {
+  let entry = rosterPending.get(g.code);
+  if (!entry) {
+    entry = { timer: null, dirty: false };
+    broadcast(g, "participants_updated", { game: state(g) });
+    entry.timer = setTimeout(() => {
+      rosterPending.delete(g.code);
+      if (entry.dirty && games.get(g.code) === g)
+        broadcast(g, "participants_updated", { game: state(g) });
+    }, ROSTER_THROTTLE_MS);
+    entry.timer.unref?.();
+    rosterPending.set(g.code, entry);
+    return;
+  }
+  entry.dirty = true;
+}
 function current(g) {
   return g.questions[g.index];
 }
@@ -870,6 +911,7 @@ async function endGame(g, reason = "Host ended the game") {
   if (g.status === "question") finishQuestion(g);
   clearTimeout(g.timer);
   clearTimeout(g.orphanTimer);
+  clearRoster(g);
   const previousStatus = g.status;
   g.status = "ending";
   const report = {
@@ -912,6 +954,7 @@ async function endGame(g, reason = "Host ended the game") {
   g.expiry = setTimeout(
     () => {
       for (const ws of g.clients) ws.close(1000, "Session finished");
+      clearRoster(g);
       games.delete(g.code);
     },
     10 * 60 * 1000,
@@ -1040,7 +1083,10 @@ server.on("upgrade", (req, socket, head) => {
       !sameOrigin(req)
     )
       throw Error();
-    rate("connect:" + peer(req), 400, 60000);
+    // One venue Wi-Fi usually NATs all phones behind a single public address,
+    // so this budget is shared by the whole room. Keep generous headroom for
+    // reconnect storms; abuse is still bounded by the per-socket limits below.
+    rate("connect:" + peer(req), CONNECTS_PER_MINUTE, 60000);
     wss.handleUpgrade(req, socket, head, (ws) =>
       wss.emit("connection", ws, req),
     );
@@ -1229,9 +1275,7 @@ wss.on("connection", (ws, req) => {
           playerToken: p.resumeToken,
           answered: p.answered,
         });
-        return broadcast(g, "participants_updated", {
-          game: state(g),
-        });
+        return broadcastRoster(g);
       }
       const g = ws.game;
       if (!g) fail("Join a game first.");
@@ -1329,9 +1373,7 @@ wss.on("connection", (ws, req) => {
         send(ws, "answer_received", {
           accepted: true,
         });
-        return broadcast(g, "participants_updated", {
-          game: state(g),
-        });
+        return broadcastRoster(g);
       }
       fail("Action is not available.");
     } catch (e) {
@@ -1363,9 +1405,7 @@ wss.on("connection", (ws, req) => {
     if (ws.role === "player") {
       const p = g.players.get(ws.playerId);
       if (p.ws === ws) p.ws = null;
-      broadcast(g, "participants_updated", {
-        game: state(g),
-      });
+      broadcastRoster(g);
     }
     if (ws.role === "host" && g.host === ws) {
       g.host = null;
@@ -1375,10 +1415,13 @@ wss.on("connection", (ws, req) => {
         });
         g.orphanTimer = setTimeout(
           () =>
-            endGame(g, "Host disconnected for 5 minutes").catch(() =>
+            endGame(
+              g,
+              `Host disconnected for ${Math.round(ORPHAN_MS / 60000)} minutes`,
+            ).catch(() =>
               console.error("Could not save a disconnected game report."),
             ),
-          5 * 60 * 1000,
+          ORPHAN_MS,
         );
       }
     }

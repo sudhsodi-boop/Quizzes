@@ -774,9 +774,99 @@ $("#removeMusic").onclick = () => {
   dirty = true;
   renderEditor();
 };
+// Every participant phone downloads each quiz image when its question starts.
+// A single 8 MB camera photo becomes ~800 MB of egress for 100 phones, which is
+// the usual reason pictures appear seconds late on a free container. Raster
+// photos/diagrams are re-encoded smaller in the browser before upload; GIF and
+// SVG are left alone (animation/vector), and the original is kept whenever
+// re-encoding would not actually save anything.
+const IMAGE_MAX_EDGE = 1600;
+const IMAGE_MIN_BYTES = 400 * 1024;
+const AUDIO_WARN_BYTES = 3 * 1024 * 1024;
+function readableSize(bytes) {
+  return bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+async function decodeImage(file) {
+  if (typeof createImageBitmap === "function")
+    return await createImageBitmap(file);
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = () => reject(Error("Unreadable image"));
+      image.src = url;
+    });
+    return image;
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }
+}
+async function canvasBlob(canvas, type, quality) {
+  if (typeof canvas.toBlob !== "function") return null;
+  return await new Promise((resolve) => {
+    try {
+      canvas.toBlob((blob) => resolve(blob || null), type, quality);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+async function optimizeImage(file) {
+  if (file.size <= IMAGE_MIN_BYTES) return file;
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return file;
+  const source = await decodeImage(file);
+  const width = source.naturalWidth || source.width;
+  const height = source.naturalHeight || source.height;
+  if (!width || !height) return file;
+  const scale = Math.min(1, IMAGE_MAX_EDGE / Math.max(width, height));
+  const w = Math.max(1, Math.round(width * scale));
+  const h = Math.max(1, Math.round(height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return file;
+  ctx.drawImage(source, 0, 0, w, h);
+  source.close?.();
+  let blob = await canvasBlob(canvas, "image/webp", 0.82);
+  let type = "image/webp";
+  if (!blob || !blob.size) {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(source, 0, 0, w, h);
+    blob = await canvasBlob(canvas, "image/jpeg", 0.82);
+    type = "image/jpeg";
+  }
+  if (!blob || !blob.size || blob.size >= file.size) return file;
+  const base = String(file.name || "image").replace(/\.[^.]+$/, "");
+  const name = `${base}.${type === "image/webp" ? "webp" : "jpg"}`;
+  return new File([blob], name, { type });
+}
+// Surfaces the size saving on the toast that replaces this one, so the host
+// still sees why a 6 MB photo no longer reaches 100 phones.
+let lastUploadNote = "";
 async function upload(file) {
+  lastUploadNote = "";
   if (file.size > 10 * 1024 * 1024)
     throw Error("Please choose a file smaller than 10 MB.");
+  let chosen = file;
+  if (/^image\//.test(file.type))
+    try {
+      chosen = await optimizeImage(file);
+    } catch {
+      chosen = file;
+    }
+  if (chosen !== file)
+    lastUploadNote = `Image optimized for large rooms: ${readableSize(
+      file.size,
+    )} → ${readableSize(chosen.size)}`;
+  else if (/^audio\//.test(file.type) && file.size > AUDIO_WARN_BYTES)
+    showToast(
+      `Soundtrack is ${readableSize(file.size)}. Every phone downloads this — under 3 MB is safer for 100 players.`,
+    );
   uploadCount++;
   $("#saveQuiz").disabled = true;
   try {
@@ -786,9 +876,9 @@ async function upload(file) {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
-          "X-File-Name": encodeURIComponent(file.name),
+          "X-File-Name": encodeURIComponent(chosen.name || file.name),
         },
-        body: file,
+        body: chosen,
       },
     );
   } finally {
@@ -813,7 +903,9 @@ async function uploadQuestion(input) {
     q.mediaType = m.mime;
     dirty = true;
     renderEditor();
-    showToast("Media attached — save the quiz to keep your changes");
+    showToast(
+      `Media attached${lastUploadNote ? ` · ${lastUploadNote}` : ""} — save the quiz to keep your changes`,
+    );
   } catch (err) {
     showToast(err.message);
   } finally {
@@ -948,6 +1040,7 @@ function send(type, data = {}) {
   socket.send(JSON.stringify({ type, ...data }));
   return true;
 }
+let reconnectAttempt = 0;
 function openSocket(initial) {
   clearTimeout(reconnectTimer);
   manualClose = false;
@@ -961,6 +1054,7 @@ function openSocket(initial) {
   );
   connectionText("Connecting to the live room…");
   socket.onopen = () => {
+    reconnectAttempt = 0;
     connectionText("Connected · answers and timers are synchronized");
     clockSent = Date.now();
     send("ping");
@@ -989,16 +1083,18 @@ function openSocket(initial) {
       return;
     }
     const saved = savedConnection();
-    if (saved && game?.status !== "ended")
+    if (saved && game?.status !== "ended") {
+      const attempt = reconnectAttempt++;
+      const backoff = Math.min(15000, 800 * 2 ** Math.min(attempt, 5));
       reconnectTimer = setTimeout(
         () =>
           openSocket({
             type: participantMode ? "resume_player" : "resume_host",
             ...saved,
           }),
-        2000,
+        backoff + Math.floor(Math.random() * 900),
       );
-    else {
+    } else {
       connectionText("Disconnected. Join or launch a game to try again.");
       $("#joinGameBtn").disabled = false;
     }

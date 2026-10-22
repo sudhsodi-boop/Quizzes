@@ -5993,3 +5993,157 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   padding: 8px 18px;
   overflow-wrap: anywhere;
 }
+
+/* ---------- Buzzer round (additive; live question types are unchanged) ---------- */
+.buzzer-player {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0 4px;
+}
+.buzz-btn {
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: 2px;
+  color: #2b0f5e;
+  background: radial-gradient(circle at 32% 28%, #fff59a, #ffd429 55%, #f0a500);
+  box-shadow: 0 14px 0 #b97c00, 0 22px 34px rgba(0, 0, 0, 0.35);
+  transition: transform 90ms ease, box-shadow 90ms ease;
+}
+.buzz-btn:active:not(:disabled) {
+  transform: translateY(8px);
+  box-shadow: 0 6px 0 #b97c00, 0 12px 20px rgba(0, 0, 0, 0.35);
+}
+.buzz-btn:disabled {
+  cursor: default;
+  filter: grayscale(0.35);
+  opacity: 0.85;
+}
+.buzz-btn.buzzed {
+  background: radial-gradient(circle at 32% 28%, #d7ffd9, #58d17a 55%, #22a24c);
+  color: #06340f;
+  box-shadow: 0 14px 0 #17723a, 0 22px 34px rgba(0, 0, 0, 0.35);
+}
+.buzz-note {
+  margin: 0;
+  text-align: center;
+  font-weight: 600;
+}
+.buzzer-host {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+.buzzer-play {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.buzz-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.buzz-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.12);
+  font-weight: 700;
+}
+.buzz-row.buzz-waiting {
+  outline: 2px solid rgba(255, 255, 255, 0.35);
+}
+.buzz-row.buzz-correct {
+  background: rgba(70, 200, 120, 0.28);
+}
+.buzz-row.buzz-wrong {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.buzz-pos {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #2b0f5e;
+  font-size: 14px;
+}
+.buzz-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.buzz-time {
+  font-size: 13px;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+.buzz-actions {
+  display: flex;
+  gap: 8px;
+}
+.buzz-actions button {
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.buzz-verdict {
+  font-size: 13px;
+  opacity: 0.9;
+}
+.display-buzzer .display-buzzes {
+  margin-top: 18px;
+}
+.display-buzzes ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.display-buzzes .buzz-row {
+  background: rgba(255, 255, 255, 0.14);
+  font-size: clamp(18px, 2.4vw, 34px);
+  padding: 14px 20px;
+  border-radius: 14px;
+}
+.display-buzzes .buzz-pos {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  font-size: 22px;
+}
+.display-buzzes .buzz-time {
+  font-size: clamp(14px, 1.6vw, 22px);
+}
+@media (max-width: 480px) {
+  .buzz-btn {
+    width: 150px;
+    height: 150px;
+    font-size: 25px;
+  }
+  .buzz-row {
+    flex-wrap: wrap;
+  }
+  .buzz-actions {
+    width: 100%;
+  }
+}

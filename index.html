@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
-    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.4" />
+    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.6" />
   </head>
   <body>
     <div class="app-shell" id="hostApp">
@@ -702,6 +702,27 @@
                 </div>
               </div>
               <div class="answer-grid" id="hostOptions"></div>
+              <section
+                id="hostBuzzer"
+                class="buzzer-host"
+                hidden
+                aria-label="Buzzer round"
+              >
+                <div class="buzzer-play">
+                  <button class="primary-btn" id="playBuzzerClip" type="button">
+                    ▶ Play clip for the room
+                  </button>
+                  <button class="secondary-btn" id="stopBuzzing" type="button">
+                    Stop buzzing
+                  </button>
+                </div>
+                <div id="hostBuzzerMedia" class="buzzer-media"></div>
+                <p class="muted" id="buzzerStatus">Waiting for the first buzz…</p>
+                <ol id="buzzQueue" class="buzz-queue"></ol>
+                <button class="secondary-btn" id="revealBuzzer" type="button">
+                  Reveal answer · no winner
+                </button>
+              </section>
               <div id="hostResults"></div>
               <section
                 id="hostLeaderboard"
@@ -830,6 +851,12 @@
             <p class="muted" id="playerHint">Waiting for your host to start.</p>
             <div id="playerMedia"></div>
             <div class="player-answers" id="playerOptions"></div>
+            <section id="playerBuzzer" class="buzzer-player" hidden>
+              <button class="buzz-btn" id="buzzButton" type="button">BUZZ</button>
+              <p class="buzz-note" id="buzzNote">
+                Tap the moment you know it.
+              </p>
+            </section>
             <button id="submitMulti" class="primary-btn full-btn" hidden>
               Submit selected answers
             </button>
@@ -1069,10 +1096,10 @@ Answer: together</pre
       </p>
       <div id="draftRecoveryList"></div>
     </dialog>
-    <script src="/qr-code.js?v=0.9.0-rc.4"></script>
-    <script src="/quiz-sound.js?v=0.9.0-rc.4"></script>
-    <script src="/app.js?v=0.9.0-rc.4"></script>
-    <script src="/extensions.js?v=0.9.0-rc.4"></script>
-    <script src="/professional.js?v=0.9.0-rc.4"></script>
+    <script src="/qr-code.js?v=0.9.0-rc.6"></script>
+    <script src="/quiz-sound.js?v=0.9.0-rc.6"></script>
+    <script src="/app.js?v=0.9.0-rc.6"></script>
+    <script src="/extensions.js?v=0.9.0-rc.6"></script>
+    <script src="/professional.js?v=0.9.0-rc.6"></script>
   </body>
 </html>

@@ -22,6 +22,8 @@
     result,
     rows = [],
     board = false,
+    buzzes = [],
+    buzzOpen = false,
     offset = 0,
     retry,
     stopped = false,
@@ -73,6 +75,10 @@
         scalable: true,
         margin: 4,
       });
+    } else if (game.status === "buzzer" && question) {
+      const queue = buzzes || [];
+      stage.innerHTML = `<section class="display-question display-buzzer"><div class="display-meta"><span>${escape(question.roundLabel)}</span><span>QUESTION ${question.index + 1} / ${question.total}</span><b id="displayTimer" role="timer">BUZZ</b></div><h1>${escape(question.text)}</h1><p class="display-instruction">${buzzOpen ? "Listen, then press BUZZ on your phone." : "Buzzing is closed."}</p><div class="display-buzzes">${queue.length ? `<ol>${queue.slice(0, 8).map((b) => `<li class="buzz-row buzz-${escape(b.status)}"><b class="buzz-pos">${b.position}</b><span class="buzz-name">${escape(b.name)}</span><span class="buzz-time">${(b.elapsedMs / 1000).toFixed(1)}s</span></li>`).join("")}</ol>` : '<p class="muted">No one has buzzed in yet.</p>'}</div></section>`;
+      tick();
     } else if (question) {
       stage.innerHTML = `<section class="display-question"><div class="display-meta"><span>${escape(question.roundLabel)}</span><span>QUESTION ${question.index + 1} / ${question.total}</span><b id="displayTimer" role="timer"></b></div><h1>${escape(question.text)}</h1><div class="display-media">${question.media && question.mediaType?.startsWith("image/") ? `<img loading="eager" fetchpriority="high" decoding="async" src="${escape(question.media)}" alt="Question image">` : question.media ? "<p>Audio question · Listen to the host.</p>" : ""}</div><div class="display-options">${(question.options || []).map((o, i) => `<div class="display-option tile-${i} ${game.status === "results" && result?.correctIndices?.includes(i) ? "display-correct" : ""}"><span aria-hidden="true">${symbols[i]}</span><span>${escape(o)}</span></div>`).join("")}</div><p class="display-instruction">${game.status === "results" ? "Correct answer: " + escape(result?.correct || "") : question.type === "multi" ? "Select all correct answers, then submit on your device." : question.type === "text" ? "Type your answer on your device." : "Choose your answer on your device."}</p></section>`;
       $(".display-media img")?.addEventListener("load", fit, { once: true });
@@ -140,10 +146,22 @@
         return;
       }
       if (m.game) game = m.game;
-      if (m.type === "question_started") {
+      if (m.type === "buzzer_started") {
         question = m.question;
         result = null;
         board = false;
+        buzzes = m.buzzes || [];
+        buzzOpen = m.open !== false;
+        render();
+      } else if (m.type === "buzz_queue") {
+        buzzes = m.buzzes || [];
+        buzzOpen = m.open !== false;
+        render();
+      } else if (m.type === "question_started") {
+        question = m.question;
+        result = null;
+        board = false;
+        buzzes = [];
         render();
       } else if (m.type === "question_ended") {
         result = m;

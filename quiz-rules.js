@@ -5,10 +5,15 @@ function error(message) {
 const normalize = (value) =>
   String(value).normalize("NFKC").trim().toLowerCase().replace(/\s+/g, " ");
 function correctIndices(q) {
+  // A buzzer question has no selectable options; the host scores it by hand.
+  if (q.type === "text" || q.type === "buzzer") return [];
   return q.type === "multi" ? q.correctAnswers : [q.correct];
 }
 function grade(q, answer) {
-  if (q.type === "text") {
+  // In a self-paced quiz a buzzer question becomes a type-the-answer question
+  // graded against the same expected-answer list; live buzzer rounds are
+  // scored by the host instead and never reach this function.
+  if (q.type === "text" || q.type === "buzzer") {
     if (typeof answer !== "string" || !answer.trim() || answer.length > 200)
       throw error("Enter an answer of 1–200 characters.");
     return q.accepted.some((a) => normalize(a) === normalize(answer)) ? 1 : 0;
@@ -41,7 +46,7 @@ function roundLabel(index, title) {
   return `Round ${index + 1}${cleaned ? ": " + cleaned : ""}`;
 }
 function solution(q) {
-  return q.type === "text"
+  return q.type === "text" || q.type === "buzzer"
     ? q.accepted.join(" / ")
     : correctIndices(q)
         .map((i) => q.options[i])

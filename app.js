@@ -29,6 +29,9 @@ let socket = null,
   liveQuestion = null,
   locked = false,
   answerPending = false,
+  buzzes = [],
+  buzzOpen = false,
+  myPlayerId = null,
   offset = 0,
   reconnectTimer = null,
   manualClose = false,
@@ -469,7 +472,7 @@ function renderEditor() {
   $("#roundEditor").innerHTML = draft.rounds
     .map(
       (r, ri) =>
-        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round name · optional<input class="round-title" value="${e(r.title)}" maxlength="100" placeholder="e.g. Easy — leave blank for Round ${ri + 1}"></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><label class="select-question"><input type="checkbox" class="question-select"> Select Q${qi + 1}</label><label class="assign-label">Round<select data-assign-round>${draft.rounds.map((round, index) => `<option value="${index}" ${index === ri ? "selected" : ""}>${e(roundTitle(index, round.title))}</option>`).join("")}<option value="new">＋ New round</option></select></label><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="multi" ${q.type === "multi" ? "selected" : ""}>Multiple correct answers</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option></select></label><label>Time · seconds<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct" required><option value="" ${q.correct < 0 ? "selected" : ""}>Select correct answer</option><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label>${q.type === "multi" ? `<fieldset class="multi-correct"><legend>Correct answers · select all that apply</legend>${(q.options || []).map((option, i) => `<label><input type="checkbox" data-correct-index="${i}" ${(q.correctAnswers || []).includes(i) ? "checked" : ""}> ${e(option || `Option ${i + 1}`)}</label>`).join("")}</fieldset><p class="muted">Partial credit: correct fraction minus wrong fraction, minimum zero.</p>` : `<label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) >= 0 ? Number(q.correct) + 1 : ""}"></label>`}`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType, true)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
+        `<section class="round-section" data-round="${ri}"><div class="round-heading"><span class="round-number">${String(ri + 1).padStart(2, "0")}</span><label>Round name · optional<input class="round-title" value="${e(r.title)}" maxlength="100" placeholder="e.g. Easy — leave blank for Round ${ri + 1}"></label><button type="button" class="text-btn" data-remove-round="${ri}">Remove round</button></div>${r.questions.map((q, qi) => `<article class="panel question-card" data-ri="${ri}" data-qi="${qi}"><div class="question-card-head"><label class="select-question"><input type="checkbox" class="question-select"> Select Q${qi + 1}</label><label class="assign-label">Round<select data-assign-round>${draft.rounds.map((round, index) => `<option value="${index}" ${index === ri ? "selected" : ""}>${e(roundTitle(index, round.title))}</option>`).join("")}<option value="new">＋ New round</option></select></label><div class="button-row"><button type="button" class="text-btn" data-move="-1" ${qi === 0 ? "disabled" : ""}>↑ Move up</button><button type="button" class="text-btn" data-remove-question>Remove</button></div></div><div class="editor-columns"><div><label>Question<input data-field="text" value="${e(q.text)}" maxlength="1000" required placeholder="What would you like to ask?"></label><div class="editor-grid"><label>Answer type<select data-field="type"><option value="choice" ${q.type === "choice" ? "selected" : ""}>Multiple choice</option><option value="multi" ${q.type === "multi" ? "selected" : ""}>Multiple correct answers</option><option value="boolean" ${q.type === "boolean" ? "selected" : ""}>True / false</option><option value="text" ${q.type === "text" ? "selected" : ""}>Fill in the blank</option><option value="buzzer" ${q.type === "buzzer" ? "selected" : ""}>Buzzer · music identification</option></select></label><label>${q.type === "buzzer" ? "Scoring window · seconds · earlier buzzers score more" : "Time · seconds"}<input type="number" data-field="seconds" min="5" max="120" value="${q.seconds}" required></label><label>Maximum points<input type="number" data-field="points" min="100" max="5000" value="${q.points}" required></label></div>${q.type === "buzzer" ? `<label>Expected answer · one per line<textarea data-field="accepted" required placeholder="Tum Hi Ho\nChaiyya Chaiyya">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted"><b>Buzzer round:</b> attach the music clip, then the host plays it over the sound system. Players press <b>Buzz</b> on their phones and their names appear on the host screen fastest first. The host asks each player in turn and taps Correct or Wrong. Only you see this answer; in an assigned quiz it becomes a type-the-answer question.</p><p class="muted">Add spelling alternatives on separate lines. Ignores capitalization and extra spaces.</p>` : q.type === "text" ? `<label>Accepted answers · one per line<textarea data-field="accepted" required placeholder="stronger\nbetter together">${e((q.accepted || []).join("\n"))}</textarea></label><p class="muted">Ignores capitalization and extra spaces. Add spelling alternatives explicitly.</p>` : q.type === "boolean" ? `<label>Correct answer<select data-field="correct" required><option value="" ${q.correct < 0 ? "selected" : ""}>Select correct answer</option><option value="0" ${q.correct === 0 ? "selected" : ""}>True</option><option value="1" ${q.correct === 1 ? "selected" : ""}>False</option></select></label>` : `<label>Answer choices · one per line (2–6)<textarea data-field="options" rows="4" required>${e((q.options || []).join("\n"))}</textarea></label>${q.type === "multi" ? `<fieldset class="multi-correct"><legend>Correct answers · select all that apply</legend>${(q.options || []).map((option, i) => `<label><input type="checkbox" data-correct-index="${i}" ${(q.correctAnswers || []).includes(i) ? "checked" : ""}> ${e(option || `Option ${i + 1}`)}</label>`).join("")}</fieldset><p class="muted">Partial credit: correct fraction minus wrong fraction, minimum zero.</p>` : `<label>Correct choice number (1 is the first line)<input type="number" data-field="correctChoice" min="1" max="6" required value="${Number(q.correct) >= 0 ? Number(q.correct) + 1 : ""}"></label>`}`}</div><div class="media-editor"><label>Question image or audio · optional<input type="file" class="question-file" accept="image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,audio/ogg"></label><p class="muted">PNG, JPEG, GIF, WebP, MP3, WAV, OGG · up to 10 MB</p><div class="media-preview">${mediaHTML(q.media, q.mediaType, true)}</div>${q.media ? '<button class="text-btn" type="button" data-remove-media>Remove media</button>' : '<div class="media-placeholder">A picture, a sound, a new way to ask.</div>'}</div></div></article>`).join("")}<button type="button" class="outline-btn" data-add-question="${ri}">＋ Add question</button></section>`,
     )
     .join("");
   buildStudio();
@@ -498,7 +501,7 @@ function buildStudio() {
   $("#questionNavigator").innerHTML = draft.rounds
     .map(
       (r, ri) =>
-        `<div class="rail-round">${e(roundTitle(ri, r.title))}</div>${r.questions.map((q, qi) => `<div class="question-thumb"><input type="checkbox" data-studio-select="${ri}:${qi}" aria-label="Select question ${++count} for moving"><button type="button" data-studio-question="${ri}:${qi}"><span class="thumb-meta">${count}. ${q.type === "multi" ? "Multiple answers" : q.type === "text" ? "Type an answer" : "Quiz"}</span><span class="thumb-title">${e(q.text || "Your next question")}</span><span class="thumb-preview">${q.media && q.mediaType?.startsWith("image/") ? `<img loading="lazy" src="${e(q.media)}" alt="">` : '<span aria-hidden="true">✦</span>'}</span><span class="thumb-answers"><i></i><i></i><i></i><i></i></span></button></div>`).join("")}`,
+        `<div class="rail-round">${e(roundTitle(ri, r.title))}</div>${r.questions.map((q, qi) => `<div class="question-thumb"><input type="checkbox" data-studio-select="${ri}:${qi}" aria-label="Select question ${++count} for moving"><button type="button" data-studio-question="${ri}:${qi}"><span class="thumb-meta">${count}. ${q.type === "buzzer" ? "Buzzer" : q.type === "multi" ? "Multiple answers" : q.type === "text" ? "Type an answer" : "Quiz"}</span><span class="thumb-title">${e(q.text || "Your next question")}</span><span class="thumb-preview">${q.media && q.mediaType?.startsWith("image/") ? `<img loading="lazy" src="${e(q.media)}" alt="">` : '<span aria-hidden="true">✦</span>'}</span><span class="thumb-answers"><i></i><i></i><i></i><i></i></span></button></div>`).join("")}`,
     )
     .join("");
   for (const card of $$("#roundEditor .question-card")) {
@@ -522,7 +525,7 @@ function buildStudio() {
     canvas.append(questionLabel, media);
     const tiles = document.createElement("div");
     tiles.className = "studio-answer-tiles";
-    if (q.type === "text") {
+    if (q.type === "text" || q.type === "buzzer") {
       const accepted = $("[data-field=accepted]", main).closest("label");
       accepted.classList.add("studio-text-answer");
       canvas.append(accepted);
@@ -963,6 +966,18 @@ $("#editorForm").onsubmit = async (event) => {
   )
     return showToast("Select correct answers for every multi-answer question.");
   if (
+    draft.rounds.some((r) =>
+      r.questions.some(
+        (q) =>
+          (q.type === "text" || q.type === "buzzer") &&
+          !(q.accepted || []).filter((a) => String(a || "").trim()).length,
+      ),
+    )
+  )
+    return showToast(
+      "Enter the answer for every fill-in-the-blank and buzzer question.",
+    );
+  if (
     draft._oversightOwner &&
     !confirm(
       `Save changes to ${draft._oversightLabel}’s original quiz? Their existing assignments and active rooms will not change.`,
@@ -1044,6 +1059,8 @@ let reconnectAttempt = 0;
 function openSocket(initial) {
   clearTimeout(reconnectTimer);
   manualClose = false;
+  const remembered = savedConnection();
+  if (remembered?.playerId) myPlayerId = remembered.playerId;
   if (socket) {
     const old = socket;
     old.onclose = null;
@@ -1401,7 +1418,12 @@ function handleMessage(m) {
     liveQuestion = m.question;
     locked = !!m.answered;
     if (m.type === "joined") {
-      storeConnection({ code: game.code, playerToken: m.playerToken });
+      myPlayerId = m.playerId || myPlayerId;
+      storeConnection({
+        code: game.code,
+        playerToken: m.playerToken,
+        playerId: myPlayerId,
+      });
       $("#joinPanel").hidden = true;
       $("#playerQuestion").hidden = false;
     } else {
@@ -1414,7 +1436,8 @@ function handleMessage(m) {
       $("#previewPlayer").href = joinURL();
     }
     loadGameMusic(m.music);
-    if (game.status === "question") renderQuestion();
+    if (game.status === "buzzer") renderBuzzer();
+    else if (game.status === "question") renderQuestion();
     else if (game.status === "results") {
       // Reconstruct the question before applying results after a reconnect/reload.
       if (liveQuestion) renderQuestion();
@@ -1440,7 +1463,40 @@ function handleMessage(m) {
       );
     return;
   }
+  if (m.type === "buzzer_started") {
+    answerPending = false;
+    connectionText("Connected · answers and timers are synchronized");
+    game = m.game;
+    liveQuestion = m.question;
+    locked = false;
+    buzzes = m.buzzes || [];
+    buzzOpen = m.open !== false;
+    renderBuzzer();
+    renderPlayers();
+    return;
+  }
+  if (m.type === "buzz_queue") {
+    buzzes = m.buzzes || [];
+    buzzOpen = m.open !== false;
+    if (game?.status === "buzzer") renderBuzzQueue();
+    return;
+  }
+  if (m.type === "buzz_received") {
+    answerPending = false;
+    const button = $("#buzzButton");
+    if (button) {
+      button.disabled = true;
+      button.classList.add("buzzed");
+    }
+    const note = $("#buzzNote");
+    if (note)
+      note.textContent = `You buzzed in at #${m.position}. Listen for your name.`;
+    if ($("#answerStatus"))
+      $("#answerStatus").textContent = `Buzzed in #${m.position} · waiting for the host.`;
+    return;
+  }
   if (m.type === "question_started") {
+    hideBuzzer();
     answerPending = false;
     connectionText("Connected · answers and timers are synchronized");
     game = m.game;
@@ -1459,6 +1515,8 @@ function handleMessage(m) {
     return;
   }
   if (m.type === "question_ended") {
+    hideBuzzer();
+    buzzes = [];
     game = m.game;
     renderResults(m);
     renderPlayers();
@@ -1485,6 +1543,8 @@ function stopQuestionAudio() {
   sound.resetDuck();
 }
 function renderLobby() {
+  hideBuzzer();
+  buzzes = [];
   stopQuestionAudio();
   sound.setPhase("lobby");
   setGameStyle("lobby");
@@ -1513,6 +1573,89 @@ function renderLobby() {
     $("#nextQuestion").textContent = "Start question →";
     $("#nextQuestion").disabled = false;
   }
+}
+function hideBuzzer() {
+  const host = $("#hostBuzzer");
+  const player = $("#playerBuzzer");
+  if (host) host.hidden = true;
+  if (player) player.hidden = true;
+  const audio = $("#hostBuzzerMedia audio");
+  if (audio) audio.pause();
+}
+function renderBuzzer() {
+  const q = liveQuestion;
+  if (!q) return;
+  sound.setPhase("question");
+  setGameStyle("question");
+  const prefix = participantMode ? "player" : "host";
+  $(`#${prefix}Round`).textContent =
+    `${q.roundLabel || roundTitle(q.roundIndex, q.round)}${q.lastInRound ? " · Last question of this round" : ""}`;
+  $(`#${prefix}${participantMode ? "Title" : "Question"}`).textContent = q.text;
+  if (participantMode) {
+    $("#playerOptions").innerHTML = "";
+    $("#playerMedia").innerHTML = "";
+    $("#textAnswerForm").hidden = true;
+    $("#submitMulti").hidden = true;
+    $("#playerBuzzer").hidden = false;
+    renderBuzzQueue();
+    return;
+  }
+  $("#hostOptions").innerHTML = "";
+  $("#hostBuzzer").hidden = false;
+  const media = $("#hostBuzzerMedia");
+  const url = q.media || "";
+  if (media && media.dataset.url !== url) {
+    media.dataset.url = url;
+    media.innerHTML = url
+      ? `<audio preload="auto" src="${e(url)}"></audio>`
+      : "";
+  }
+  $("#nextQuestion").disabled = true;
+  renderBuzzQueue();
+}
+function renderBuzzQueue() {
+  const list = $("#buzzQueue");
+  if (!list) return;
+  const queue = buzzes || [];
+  list.innerHTML = queue.length
+    ? queue
+        .map(
+          (b) => `<li class="buzz-row buzz-${e(b.status)}">
+        <b class="buzz-pos">${b.position}</b>
+        <span class="buzz-name">${e(b.name)}</span>
+        <span class="buzz-time">${(b.elapsedMs / 1000).toFixed(1)}s</span>
+        ${
+          !participantMode
+            ? `<span class="buzz-actions">${
+                b.status === "waiting"
+                  ? `<button type="button" class="primary-btn" data-verdict="1" data-player="${e(b.playerId)}">Correct</button><button type="button" class="secondary-btn" data-verdict="0" data-player="${e(b.playerId)}">Wrong</button>`
+                  : `<span class="buzz-verdict">${b.status === "correct" ? "Correct" : "Wrong"}</span>`
+              }</span>`
+            : ""
+        }
+      </li>`,
+        )
+        .join("")
+    : "";
+  const status = $("#buzzerStatus");
+  if (status)
+    status.textContent = queue.length
+      ? `${queue.length} buzzed in · fastest at the top`
+      : "Waiting for the first buzz…";
+  if ($("#stopBuzzing")) $("#stopBuzzing").disabled = !buzzOpen;
+  const mine = queue.find((b) => b.playerId === myPlayerId);
+  const button = $("#buzzButton");
+  if (button) {
+    button.disabled = !!mine || !buzzOpen;
+    button.classList.toggle("buzzed", !!mine);
+  }
+  const note = $("#buzzNote");
+  if (note)
+    note.textContent = mine
+      ? `You buzzed in at #${mine.position}. Listen for your name.`
+      : buzzOpen === false
+        ? "Buzzing has closed for this question."
+        : "Tap the moment you know it.";
 }
 function renderQuestion() {
   multiSelection = new Set();
@@ -1752,6 +1895,38 @@ $("#nextQuestion").onclick = () => {
     if (confirm("End the timer now and reveal the correct answer?"))
       send("reveal_answers");
   } else send("next_question");
+};
+$("#buzzButton").onclick = () => {
+  if (!send("buzz")) return;
+  const button = $("#buzzButton");
+  button.disabled = true;
+  button.classList.add("buzzed");
+  if ($("#buzzNote")) $("#buzzNote").textContent = "Buzzed in — good luck!";
+};
+$("#playBuzzerClip").onclick = () => {
+  sound.enable();
+  const audio = $("#hostBuzzerMedia audio");
+  if (!audio) return showToast("Attach a music clip to this question first.");
+  audio.currentTime = 0;
+  audio.volume = 1;
+  audio.play().catch(() =>
+    showToast("Tap play again to start the clip on this device."),
+  );
+};
+$("#stopBuzzing").onclick = () => {
+  if (confirm("Close buzzing so no one else can buzz in?")) send("stop_buzzing");
+};
+$("#revealBuzzer").onclick = () => {
+  if (confirm("Reveal the answer with no winner? Nobody scores for this question."))
+    send("reveal_answers");
+};
+$("#buzzQueue").onclick = (event) => {
+  const button = event.target.closest("button[data-verdict]");
+  if (!button) return;
+  send("buzz_verdict", {
+    playerId: button.dataset.player,
+    correct: button.dataset.verdict === "1",
+  });
 };
 $("#endGame").onclick = () => {
   if (game?.status === "ended") {
@@ -2140,6 +2315,7 @@ $("#toggleLeaderboard").onclick = () => {
   if (game) send("set_leaderboard", { visible: !game.leaderboardVisible });
 };
 function renderRoundIntro() {
+  hideBuzzer();
   const last = game.status === "last_question_intro";
   stopQuestionAudio();
   sound.setPhase("lobby");

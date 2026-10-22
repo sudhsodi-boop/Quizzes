@@ -157,7 +157,9 @@ module.exports = ({ db, json, data, fail, owns, isSiteAdmin, rate }) =>
         if (
           ++count > 200 ||
           !q ||
-          !["choice", "multi", "boolean", "text"].includes(q.type) ||
+          !["choice", "multi", "boolean", "text", "buzzer"].includes(
+            q.type,
+          ) ||
           typeof q.text !== "string" ||
           q.text.length > 1000
         )
@@ -186,7 +188,8 @@ module.exports = ({ db, json, data, fail, owns, isSiteAdmin, rate }) =>
               q[name].some((v) => typeof v !== "string" || v.length > 500))
           )
             fail("Invalid draft answers.");
-        if (q.type !== "text" && !Array.isArray(q.options))
+        // A buzzer question has no choices: the host scores spoken answers.
+        if (q.type !== "text" && q.type !== "buzzer" && !Array.isArray(q.options))
           fail("Draft answer choices required.");
         if (
           q.correctAnswers !== undefined &&

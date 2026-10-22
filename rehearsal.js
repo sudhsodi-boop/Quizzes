@@ -54,10 +54,15 @@
         warnings.push(
           `Question ${i + 1}: long text—check wrapping at your projector size.`,
         );
-      if (q.type === "text" && !q.accepted?.some((x) => x.trim()))
+      // A buzzer question carries its expected answer, not answer choices.
+      if (
+        (q.type === "text" || q.type === "buzzer") &&
+        !q.accepted?.some((x) => x.trim())
+      )
         warnings.push(`Question ${i + 1}: add an accepted answer.`);
       if (
         q.type !== "text" &&
+        q.type !== "buzzer" &&
         (q.options?.length < 2 || q.options?.some((x) => !x.trim()))
       )
         warnings.push(`Question ${i + 1}: complete all answer choices.`);
@@ -65,6 +70,7 @@
         q.type === "multi"
           ? !q.correctAnswers?.length
           : q.type !== "text" &&
+            q.type !== "buzzer" &&
             !(q.correct >= 0 && q.correct < q.options?.length)
       )
         warnings.push(`Question ${i + 1}: select the correct answer(s).`);
@@ -228,8 +234,8 @@
         solution = "Complete the draft answer key.";
       }
     }
-    host.innerHTML = `<div class="eyebrow">${e(q.roundLabel)} · ${index + 1}/${questions.length} <b class="rehearsal-timer"></b></div><h2>${e(q.text || "Untitled question")}</h2>${media(q)}<div class="rehearsal-options">${(q.options || []).map((o, i) => `<div class="tile-${i}">${e(o || "Add an answer")}</div>`).join("")}</div><p>${phase === "results" ? "Correct answer: " + e(solution) : "Answer on the simulated phone, then reveal."}</p>`;
-    player.innerHTML = `<div class="eyebrow">${index + 1}/${questions.length} · <b class="rehearsal-timer"></b></div><h2>${e(q.text || "Untitled question")}</h2>${media(q)}<div class="rehearsal-options">${q.type === "text" ? '<input id="rehearsalText" aria-label="Test answer" maxlength="200"><button id="rehearsalSubmit" class="primary-btn">Submit answer</button>' : (q.options || []).map((o, i) => `<button data-choice="${i}" class="tile-${i}" ${phase !== "question" || answered ? "disabled" : ""}>${e(o || "Add an answer")}</button>`).join("")}</div>${q.type === "multi" ? '<button id="rehearsalSubmit" class="primary-btn">Submit selected</button>' : ""}<p id="rehearsalPlayerStatus" role="status">${phase === "results" ? "Correct answer: " + e(solution) + " · " + points + " points" : answered ? "Answer locked in." : "Choose an answer."}</p>`;
+    host.innerHTML = `<div class="eyebrow">${e(q.roundLabel)} · ${index + 1}/${questions.length} <b class="rehearsal-timer"></b></div><h2>${e(q.text || "Untitled question")}</h2>${media(q)}<div class="rehearsal-options">${q.type === "buzzer" ? '<div class="tile-0">Buzzer round — the host plays the clip over the sound system and scores the answers by hand.</div>' : (q.options || []).map((o, i) => `<div class="tile-${i}">${e(o || "Add an answer")}</div>`).join("")}</div><p>${phase === "results" ? "Correct answer: " + e(solution) : "Answer on the simulated phone, then reveal."}</p>`;
+    player.innerHTML = `<div class="eyebrow">${index + 1}/${questions.length} · <b class="rehearsal-timer"></b></div><h2>${e(q.text || "Untitled question")}</h2>${media(q)}<div class="rehearsal-options">${q.type === "text" || q.type === "buzzer" ? '<input id="rehearsalText" aria-label="Test answer" maxlength="200"><button id="rehearsalSubmit" class="primary-btn">Submit answer</button>' : (q.options || []).map((o, i) => `<button data-choice="${i}" class="tile-${i}" ${phase !== "question" || answered ? "disabled" : ""}>${e(o || "Add an answer")}</button>`).join("")}</div>${q.type === "multi" ? '<button id="rehearsalSubmit" class="primary-btn">Submit selected</button>' : ""}<p id="rehearsalPlayerStatus" role="status">${phase === "results" ? "Correct answer: " + e(solution) + " · " + points + " points" : answered ? "Answer locked in." : "Choose an answer."}</p>`;
     document.querySelectorAll("[data-choice]").forEach(
       (b) =>
         (b.onclick = () => {

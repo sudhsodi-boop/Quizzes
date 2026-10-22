@@ -67,7 +67,10 @@ module.exports = function workspaceFeatures({
   function safeQuestion(q, index) {
     return {
       index,
-      type: q.type,
+      // A buzzer round is a live, host-scored question. In a self-paced
+      // assignment it is shown and graded as a type-the-answer question
+      // against the same expected-answer list.
+      type: q.type === "buzzer" ? "text" : q.type,
       text: q.text,
       options: q.options,
       points: q.points,
@@ -183,12 +186,13 @@ module.exports = function workspaceFeatures({
         const index = state.answers.length,
           q = questions[index];
         result.question = safeQuestion(q, index);
-        result.question.options = answerOrder(
-          q,
-          index,
-          result.settings,
-          state,
-        ).map((i) => q.options[i]);
+        if (q.type !== "text" && q.type !== "buzzer")
+          result.question.options = answerOrder(
+            q,
+            index,
+            result.settings,
+            state,
+          ).map((i) => q.options[i]);
         result.question.seconds = q.seconds;
         result.question.deadline = state.deadline || null;
       }
@@ -650,7 +654,13 @@ module.exports = function workspaceFeatures({
         const timedOut =
           settings.timerEnabled && Date.now() >= progress.deadline;
         let answer = x.answer;
-        if (!timedOut && x.skip !== true && q.type !== "text") {
+        // A buzzer question is answered by typing, not by choosing an option.
+        if (
+          !timedOut &&
+          x.skip !== true &&
+          q.type !== "text" &&
+          q.type !== "buzzer"
+        ) {
           const order = answerOrder(q, x.index, settings, progress);
           const mapIndex = (i) => {
             if (!Number.isInteger(i) || i < 0 || i >= order.length)

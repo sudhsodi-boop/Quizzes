@@ -267,7 +267,7 @@ async function validateQuiz(input, ownerId, id = crypto.randomUUID()) {
       fail("Each round needs at least one question.");
     for (const x of r.questions) {
       if (++count > 200) fail("Maximum 200 questions per quiz.");
-      if (!["choice", "multi", "boolean", "text"].includes(x.type))
+      if (!["choice", "multi", "boolean", "text", "buzzer"].includes(x.type))
         fail("Invalid question type");
       const question = {
         type: x.type,
@@ -296,13 +296,13 @@ async function validateQuiz(input, ownerId, id = crypto.randomUUID()) {
         question.points > 5000
       )
         fail("Points must be 100–5000.");
-      if (x.type === "text") {
+      if (x.type === "text" || x.type === "buzzer") {
         if (
           !Array.isArray(x.accepted) ||
           !x.accepted.length ||
           x.accepted.length > 20
         )
-          fail("Add 1–20 accepted answers.");
+          fail(x.type === "buzzer" ? "Add the expected answer." : "Add 1–20 accepted answers.");
         question.accepted = x.accepted.map((a) =>
           bounded(a, 200, "accepted answer"),
         );
@@ -838,6 +838,10 @@ function state(g) {
     deadline: g.deadline,
     musicState: g.musicState,
     leaderboardVisible: g.leaderboardVisible,
+    buzzer:
+      g.status === "buzzer"
+        ? { open: !!g.buzzingOpen, count: (g.buzzes || []).length }
+        : null,
     upcomingRound: ["round_intro", "last_question_intro"].includes(g.status)
       ? rules.roundLabel(
           g.questions[g.index + 1].roundIndex,
@@ -890,6 +894,44 @@ function result(g) {
     stats: g.stats,
   };
 }
+// Buzzer round: players buzz from their phones, the server orders them by its
+// own clock (never the phone's), and the host accepts or rejects each answer
+// out loud before anyone is scored.
+function buzzQueue(g) {
+  return (g.buzzes || []).map((b, i) => ({
+    position: i + 1,
+    playerId: b.playerId,
+    name: g.players.get(b.playerId)?.name || "Player",
+    status: b.status,
+    elapsedMs: b.at - (g.startedAt || b.at),
+    connected: !!g.players.get(b.playerId)?.ws,
+  }));
+}
+function broadcastBuzzes(g) {
+  broadcast(g, "buzz_queue", {
+    buzzes: buzzQueue(g),
+    open: !!g.buzzingOpen,
+  });
+}
+function finishBuzzer(g, won) {
+  if (g.status !== "buzzer") return;
+  clearTimeout(g.timer);
+  g.buzzingOpen = false;
+  g.status = "results";
+  g.leaderboardVisible =
+    !g.questions[g.index + 1] ||
+    g.questions[g.index + 1].roundIndex !== current(g).roundIndex;
+  for (const p of g.players.values()) {
+    p.score += p.pending || 0;
+    p.pending = 0;
+  }
+  broadcast(g, "question_ended", {
+    game: state(g),
+    ...result(g),
+    buzzes: buzzQueue(g),
+    buzzerWon: won,
+  });
+}
 function finishQuestion(g) {
   if (g.status !== "question") return;
   clearTimeout(g.timer);
@@ -908,6 +950,7 @@ function finishQuestion(g) {
 }
 async function endGame(g, reason = "Host ended the game") {
   if (["ended", "ending"].includes(g.status)) return;
+  if (g.status === "buzzer") finishBuzzer(g, false);
   if (g.status === "question") finishQuestion(g);
   clearTimeout(g.timer);
   clearTimeout(g.orphanTimer);
@@ -1035,15 +1078,32 @@ async function startQuestion(g) {
   }
   g.index++;
   g.imageTelemetry = new Map();
-  g.status = "question";
   g.leaderboardVisible = false;
   g.startedAt = Date.now();
-  g.deadline = g.startedAt + current(g).seconds * 1000;
   g.stats = {};
   for (const p of g.players.values()) {
     p.answered = false;
     p.pending = 0;
   }
+  // A buzzer question has no countdown: the host plays the clip over the hall
+  // speakers and closes buzzing when the room is ready. `seconds` is used only
+  // as the scoring window, so earlier buzzers earn more.
+  if (current(g).type === "buzzer") {
+    g.status = "buzzer";
+    g.deadline = null;
+    g.buzzes = [];
+    g.buzzingOpen = true;
+    sendHostImages(g.host, g);
+    sendHostPreview(g);
+    return broadcast(g, "buzzer_started", {
+      game: state(g),
+      question: question(g),
+      buzzes: buzzQueue(g),
+      open: true,
+    });
+  }
+  g.status = "question";
+  g.deadline = g.startedAt + current(g).seconds * 1000;
   sendHostImages(g.host, g);
   sendHostPreview(g);
   broadcast(g, "question_started", {
@@ -1055,7 +1115,9 @@ async function startQuestion(g) {
 function sync(ws, g, type, extra = {}) {
   send(ws, type, {
     game: state(g),
-    question: ["question", "results"].includes(g.status) ? question(g) : null,
+    question: ["question", "results", "buzzer"].includes(g.status)
+      ? question(g)
+      : null,
     result: g.status === "results" ? result(g) : null,
     leaderboard: g.status === "ended" ? ranking(g) : null,
     serverNow: Date.now(),
@@ -1304,6 +1366,21 @@ wss.on("connection", (ws, req) => {
         sendHostPreview(g);
         return;
       }
+      if (ws.role === "player" && msg.type === "buzz") {
+        if (g.status !== "buzzer") fail("There is nothing to buzz in on.");
+        if (!g.buzzingOpen) fail("Buzzing has closed for this question.");
+        if (!g.players.has(ws.playerId)) fail("Rejoin the game to buzz in.");
+        if ((g.buzzes || []).some((b) => b.playerId === ws.playerId))
+          fail("You have already buzzed in.");
+        g.buzzes.push({
+          playerId: ws.playerId,
+          at: Date.now(),
+          status: "waiting",
+        });
+        send(ws, "buzz_received", { position: g.buzzes.length });
+        broadcastBuzzes(g);
+        return sendHostPreview(g);
+      }
       if (ws.role === "host") {
         const admin = await requireUser(req);
         if (ws.readyState !== 1) return;
@@ -1335,7 +1412,61 @@ wss.on("connection", (ws, req) => {
         }
         if (msg.type === "start_question" || msg.type === "next_question")
           return await startQuestion(g);
-        if (msg.type === "reveal_answers") return finishQuestion(g);
+        if (msg.type === "reveal_answers")
+          return g.status === "buzzer" ? finishBuzzer(g, false) : finishQuestion(g);
+        if (msg.type === "stop_buzzing") {
+          if (g.status !== "buzzer") fail("This is not a buzzer question.");
+          g.buzzingOpen = false;
+          return broadcastBuzzes(g);
+        }
+        if (msg.type === "buzz_verdict") {
+          if (g.status !== "buzzer") fail("This is not a buzzer question.");
+          if (typeof msg.correct !== "boolean")
+            fail("Mark the answer correct or wrong.");
+          const entry = (g.buzzes || []).find(
+            (b) => b.playerId === msg.playerId,
+          );
+          if (!entry) fail("That player has not buzzed in yet.");
+          if (entry.status !== "waiting")
+            fail("That player has already answered.");
+          const p = g.players.get(msg.playerId);
+          if (!p) fail("That player is no longer in this game.");
+          const elapsed = Math.max(0, entry.at - g.startedAt);
+          entry.status = msg.correct ? "correct" : "wrong";
+          if (msg.correct) {
+            const window = current(g).seconds * 1000;
+            const points = Math.round(
+              Math.max(
+                100,
+                current(g).points *
+                  (1 - (0.5 * Math.min(window, elapsed)) / window),
+              ),
+            );
+            p.answered = true;
+            p.pending = points;
+            g.history.push({
+              playerId: p.id,
+              questionIndex: g.index,
+              answer: null,
+              correct: true,
+              credit: 1,
+              points,
+              elapsedMs: elapsed,
+            });
+            g.buzzingOpen = false;
+            return finishBuzzer(g, true);
+          }
+          g.history.push({
+            playerId: p.id,
+            questionIndex: g.index,
+            answer: null,
+            correct: false,
+            credit: 0,
+            points: 0,
+            elapsedMs: elapsed,
+          });
+          return broadcastBuzzes(g);
+        }
         if (msg.type === "end_game") return await endGame(g);
       }
       if (msg.type === "submit_answer" && ws.role === "player") {

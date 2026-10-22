@@ -388,6 +388,9 @@
   }
   if (location.pathname === "/play") {
     const id = new URLSearchParams(location.search).get("quiz");
+    // Marks the assigned participant screens, which use the game-show theme.
+    // /invite keeps the classic look.
+    document.body.classList.add("assigned-quiz");
     $("#independentApp").hidden = false;
     const endpoint = "/api/published/" + encodeURIComponent(id || "");
     const soundtrack = document.createElement("audio");

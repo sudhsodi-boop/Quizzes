@@ -6147,3 +6147,284 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
     width: 100%;
   }
 }
+
+/* ============================================================
+   Design D — Game Show Bold
+   Scope: assigned (self-paced) participant screens only.
+   Live join, live question, live results, the host console and
+   the projector keep the classic purple look.
+   ============================================================ */
+body.assigned-quiz {
+  background: linear-gradient(165deg, #ff2e88 0%, #8a2be2 55%, #2b0f5e 100%);
+  background-attachment: fixed;
+  color: #fff;
+}
+.assigned-quiz .independent-shell {
+  max-width: 1060px;
+  padding: clamp(16px, 3vw, 36px) clamp(12px, 3vw, 22px);
+  min-height: 100vh;
+}
+.assigned-quiz .independent-brand {
+  color: #ffe14d;
+  font-size: clamp(24px, 2.6vw, 30px);
+  letter-spacing: -0.5px;
+  /* A dark pill keeps the gold wordmark readable over the pink stop of the
+     gradient (2.7:1 bare, 5.4:1 on the pill). */
+  background: rgba(0, 0, 0, 0.34);
+  border-radius: 999px;
+  padding: 10px 20px;
+}
+.assigned-quiz .independent-brand span {
+  color: rgba(255, 255, 255, 0.8);
+  letter-spacing: 2px;
+}
+.assigned-quiz .independent-shell > .panel {
+  /* Dark enough that white body text clears 4.5:1 over the lightest stop of
+     the gradient. */
+  background: rgba(0, 0, 0, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 22px;
+  padding: clamp(20px, 3vw, 34px);
+  box-shadow: 0 24px 60px rgba(10, 0, 30, 0.35);
+}
+.assigned-quiz .independent-shell h1 {
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 900;
+  letter-spacing: -0.6px;
+  color: #fff;
+}
+.assigned-quiz .independent-shell h2 {
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 800;
+  line-height: 1.25;
+  color: #fff;
+}
+.assigned-quiz .independent-shell h3 {
+  color: #fff;
+}
+.assigned-quiz .independent-shell p,
+.assigned-quiz .independent-shell li,
+.assigned-quiz .independent-shell form > label {
+  font-size: 17px;
+  line-height: 1.65;
+  color: rgba(255, 255, 255, 0.94);
+}
+.assigned-quiz .independent-shell form > label {
+  font-weight: 800;
+  margin: 22px 0;
+}
+.assigned-quiz .independent-shell .eyebrow {
+  color: #ffe14d;
+  opacity: 1;
+  letter-spacing: 1.4px;
+}
+.assigned-quiz .independent-shell .muted,
+.assigned-quiz .independent-shell small {
+  color: rgba(255, 255, 255, 0.78) !important;
+}
+.assigned-quiz .independent-shell .publication-deadline {
+  background: rgba(0, 0, 0, 0.28);
+  color: #ffe14d;
+  font-size: 14px !important;
+  font-weight: 700;
+  border-radius: 10px;
+}
+.assigned-quiz .publication-music small {
+  font-size: 14px;
+}
+.assigned-quiz .independent-shell form > label input,
+.assigned-quiz .independent-shell input[type="text"],
+.assigned-quiz .independent-shell input[type="email"],
+.assigned-quiz .independent-shell input[type="password"] {
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: 18px;
+  margin-top: 10px;
+}
+.assigned-quiz .independent-shell form > label input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+.assigned-quiz .independent-shell form > label input:focus {
+  border-color: #ffe14d;
+  outline: 3px solid rgba(255, 225, 77, 0.35);
+}
+.assigned-quiz .independent-shell .async-options label {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid transparent;
+  border-left: 6px solid rgba(255, 255, 255, 0.35);
+  border-radius: 12px;
+  padding: 20px 18px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.assigned-quiz .independent-shell .async-options label:nth-child(4n + 1) {
+  border-left-color: #ffe14d;
+}
+.assigned-quiz .independent-shell .async-options label:nth-child(4n + 2) {
+  border-left-color: #3ddc97;
+}
+.assigned-quiz .independent-shell .async-options label:nth-child(4n + 3) {
+  border-left-color: #4cc9f0;
+}
+.assigned-quiz .independent-shell .async-options label:nth-child(4n + 4) {
+  border-left-color: #ff7ab6;
+}
+.assigned-quiz .independent-shell .async-options label:has(input:checked) {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: #ffe14d;
+  border-left-width: 6px;
+}
+.assigned-quiz .independent-shell .async-options input {
+  accent-color: #ffe14d;
+  width: 24px;
+  height: 24px;
+}
+.assigned-quiz .independent-shell .async-options label span {
+  overflow-wrap: anywhere;
+}
+.assigned-quiz .independent-shell .primary-btn {
+  background: #ffe14d;
+  color: #2b0f5e;
+  font-weight: 900;
+  font-size: 18px;
+  padding: 17px 24px;
+  border-radius: 14px;
+  border: none;
+  letter-spacing: 0.2px;
+  box-shadow: 0 8px 20px rgba(43, 15, 94, 0.3);
+}
+.assigned-quiz .independent-shell .primary-btn:hover {
+  background: #ffea7a;
+}
+.assigned-quiz .independent-shell .secondary-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  color: #fff;
+  font-weight: 800;
+  font-size: 17px;
+  padding: 15px 22px;
+  border-radius: 14px;
+}
+.assigned-quiz .independent-shell .text-btn {
+  color: #ffe14d;
+  font-size: 16px;
+  font-weight: 700;
+}
+.assigned-quiz .independent-shell .async-timer {
+  background: rgba(0, 0, 0, 0.3);
+  color: #ffe14d;
+  font-size: 22px;
+  font-weight: 800;
+  padding: 12px 22px;
+  border-radius: 30px;
+}
+.assigned-quiz .independent-shell .async-timer.urgent {
+  background: #ffd7e2;
+  color: #8a0f2e;
+}
+.assigned-quiz .independent-shell .answer-feedback {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-left: 6px solid #ffe14d;
+  border-radius: 16px;
+  padding: 26px;
+}
+.assigned-quiz .independent-shell .answer-feedback h2 {
+  font-size: clamp(28px, 3.5vw, 38px);
+  font-weight: 900;
+}
+.assigned-quiz .independent-shell .answer-feedback h3 {
+  font-size: 21px;
+  color: rgba(255, 255, 255, 0.92);
+}
+.assigned-quiz .independent-shell .feedback-points {
+  color: #ffe14d;
+  font-size: 26px;
+  font-weight: 800;
+}
+.assigned-quiz .independent-shell .final-score {
+  color: #ffe14d;
+  font-size: clamp(44px, 7vw, 68px);
+  font-weight: 900;
+  line-height: 1;
+}
+.assigned-quiz .independent-shell .final-score span {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 20px;
+  font-weight: 600;
+}
+.assigned-quiz .independent-shell .completed-leaderboard {
+  border-top: 1px solid rgba(255, 255, 255, 0.22);
+}
+.assigned-quiz .independent-shell .completed-leaderboard li {
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 16px 14px;
+  margin-bottom: 8px;
+  font-size: 18px;
+  color: #fff;
+  align-items: center;
+}
+.assigned-quiz .independent-shell .completed-leaderboard li:first-child {
+  background: rgba(255, 225, 77, 0.18);
+  border-color: rgba(255, 225, 77, 0.5);
+}
+.assigned-quiz .independent-shell .completed-leaderboard .rank {
+  background: #ffe14d;
+  color: #2b0f5e;
+  font-size: 16px;
+  font-weight: 900;
+  width: 30px;
+  height: 30px;
+}
+.assigned-quiz .independent-shell .completed-leaderboard strong {
+  color: #fff;
+  font-size: 20px;
+}
+.assigned-quiz .independent-shell .completed-leaderboard .your-ranking {
+  border: 2px solid #ffe14d;
+  background: rgba(255, 225, 77, 0.16);
+}
+.assigned-quiz .independent-shell .solution {
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+.assigned-quiz .independent-shell .solution summary,
+.assigned-quiz .independent-shell .answer-review > summary {
+  color: #fff;
+  font-size: 17px;
+}
+.assigned-quiz .independent-shell .solution b,
+.assigned-quiz .independent-shell .solution p {
+  color: rgba(255, 255, 255, 0.92);
+}
+.assigned-quiz .independent-shell #attemptStatus {
+  color: #ffe14d;
+  font-weight: 700;
+}
+.assigned-quiz .independent-shell a {
+  color: #ffe14d;
+}
+@media (max-width: 700px) {
+  .assigned-quiz .independent-shell .async-options {
+    grid-template-columns: 1fr;
+  }
+  .assigned-quiz .independent-shell p,
+  .assigned-quiz .independent-shell li,
+  .assigned-quiz .independent-shell form > label {
+    font-size: 16px;
+  }
+  .assigned-quiz .independent-shell .async-options label {
+    padding: 16px 14px;
+    font-size: 17px;
+  }
+  .assigned-quiz .independent-shell .answer-feedback {
+    padding: 20px 18px;
+  }
+}

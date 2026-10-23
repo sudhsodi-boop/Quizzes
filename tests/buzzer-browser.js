@@ -42,8 +42,35 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
   ).toBeVisible();
 
   // Create the saved quiz through the app's own API so this module tests the
-  // buzzer screens themselves, not the editor.
+  // buzzer screens themselves, not the editor. The buzzer question carries a
+  // real one-second WAV clip so the Play/Stop controls can be exercised.
   const created = await page.evaluate(async (quiz) => {
+    const wav = new Uint8Array(44 + 8000);
+    const view = new DataView(wav.buffer);
+    const ascii = (at, text) => [...text].forEach((c, i) => view.setUint8(at + i, c.charCodeAt(0)));
+    ascii(0, "RIFF");
+    view.setUint32(4, 36 + 8000, true);
+    ascii(8, "WAVEfmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, 8000, true);
+    view.setUint32(28, 8000, true);
+    view.setUint16(32, 1, true);
+    view.setUint16(34, 8, true);
+    ascii(36, "data");
+    view.setUint32(40, 8000, true);
+    wav.fill(128, 44);
+    const upload = await fetch("/api/media", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-File-Name": "buzzer-clip.wav",
+      },
+      body: wav,
+    }).then((r) => r.json());
+    if (!upload.url) throw Error("Could not upload the clip: " + JSON.stringify(upload));
+    quiz.rounds[0].questions[0].media = upload.url;
     const res = await fetch("/api/quizzes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -60,6 +87,8 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
     .first();
   await expect(card).toBeVisible();
   await card.locator("[data-launch]").click();
+  // The code arrives over the socket: wait for a real one, not the placeholder.
+  await expect(page.locator("#hostCode")).toHaveText(/^[A-Z0-9]{8}$/);
   const code = (await page.locator("#hostCode").textContent()).trim();
 
   // --- three phones join ---
@@ -70,6 +99,10 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
     await p.goto(`/join?code=${code}`);
     await p.getByLabel("Your nickname").fill(name);
     await p.getByRole("button", { name: "Join game" }).click();
+    // Proof the phone really joined: the join panel closes and the player
+    // screen opens. (#playerTitle is present but hidden before joining.)
+    await expect(p.locator("#joinPanel")).toBeHidden();
+    await expect(p.locator("#playerQuestion")).toBeVisible();
     await expect(p.locator("#playerTitle")).toHaveText("You’re in!");
     phones.push({ name, page: p, ctx });
   }
@@ -91,13 +124,13 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
         title: document.querySelector("#playerTitle")?.textContent,
         status: document.querySelector("#attemptStatus, #playerStatus, .player-alert")
           ?.textContent,
-        gameStatus: typeof game !== "undefined" ? game.status : "no game",
+        gameStatus: game ? game.status : "no game object",
         saved: JSON.stringify(savedConnection ? savedConnection() : null),
       }));
       const hostInfo = await page.evaluate(() => ({
         code: document.querySelector("#hostCode")?.textContent,
-        status: typeof game !== "undefined" ? game.status : "no game",
-        players: typeof game !== "undefined" ? game.participants?.length : -1,
+        status: game ? game.status : "no game object",
+        players: game?.participants?.length ?? -1,
       }));
       throw Error(
         `BUZZ button missing for ${phone.name}\n  phone: ${JSON.stringify(phoneInfo)}\n  host: ${JSON.stringify(hostInfo)}`,
@@ -107,6 +140,28 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
     path: "test-artifacts/buzzer-player.png",
     animations: "disabled",
   });
+
+  // --- the host plays the clip over the hall speakers, then stops it ---
+  const clip = page.locator("#hostBuzzerMedia audio");
+  await expect(clip).toHaveCount(1);
+  await expect(page.locator("#stopBuzzerClip")).toBeDisabled();
+  await page.locator("#playBuzzerClip").click();
+  await expect
+    .poll(() => page.evaluate(() => !document.querySelector("#hostBuzzerMedia audio").paused))
+    .toBe(true);
+  await expect(page.locator("#stopBuzzerClip")).toBeEnabled();
+  await expect(page.locator("#clipNote")).toContainText("playing");
+  await page.locator("#stopBuzzerClip").click();
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const a = document.querySelector("#hostBuzzerMedia audio");
+        return a.paused && a.currentTime === 0;
+      }),
+    )
+    .toBe(true);
+  await expect(page.locator("#stopBuzzerClip")).toBeDisabled();
+  await expect(page.locator("#clipNote")).toContainText("stopped");
 
   // --- buzz in a shuffled order: Meera, Anita, Rahul ---
   for (const phone of phones) {

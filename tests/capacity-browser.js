@@ -72,10 +72,17 @@ function largeWav(seconds = 40) {
 module.exports = async function capacityBrowser({ page, password }) {
   // The main workflow ends signed out, so sign back in as the same host.
   await page.goto("/");
-  await page.getByRole("button", { name: "Host sign in" }).click();
-  await page.locator("#emailInput").fill("browser@example.test");
-  await page.locator("#passwordInput").fill(password);
-  await page.locator("#submitAuth").click();
+  // An earlier module may already have signed this browser back in.
+  if (
+    !(await page
+      .getByRole("button", { name: "Sign out", exact: true })
+      .isVisible())
+  ) {
+    await page.getByRole("button", { name: "Host sign in" }).click();
+    await page.locator("#emailInput").fill("browser@example.test");
+    await page.locator("#passwordInput").fill(password);
+    await page.locator("#submitAuth").click();
+  }
   await expect(
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toBeVisible();

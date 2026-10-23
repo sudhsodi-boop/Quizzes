@@ -1514,6 +1514,11 @@ test("Host editor and a separate mobile player complete a saved multimedia quiz"
   await asyncContext.close();
   await friendContext.close();
   await require("./professional-browser")({ page, browser, errors });
+  await require("./buzzer-browser")({
+    page,
+    browser,
+    password: replacementPassword,
+  });
   await require("./capacity-browser")({
     page,
     password: replacementPassword,

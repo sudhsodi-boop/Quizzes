@@ -81,9 +81,28 @@ module.exports = async function buzzerBrowser({ page, browser, password }) {
     "Waiting for the first buzz",
   );
   for (const phone of phones)
-    await expect(phone.page.locator("#buzzButton")).toBeVisible({
-      timeout: 20000,
-    });
+    try {
+      await expect(phone.page.locator("#buzzButton")).toBeVisible({
+        timeout: 20000,
+      });
+    } catch (err) {
+      const phoneInfo = await phone.page.evaluate(() => ({
+        url: location.href,
+        title: document.querySelector("#playerTitle")?.textContent,
+        status: document.querySelector("#attemptStatus, #playerStatus, .player-alert")
+          ?.textContent,
+        gameStatus: typeof game !== "undefined" ? game.status : "no game",
+        saved: JSON.stringify(savedConnection ? savedConnection() : null),
+      }));
+      const hostInfo = await page.evaluate(() => ({
+        code: document.querySelector("#hostCode")?.textContent,
+        status: typeof game !== "undefined" ? game.status : "no game",
+        players: typeof game !== "undefined" ? game.participants?.length : -1,
+      }));
+      throw Error(
+        `BUZZ button missing for ${phone.name}\n  phone: ${JSON.stringify(phoneInfo)}\n  host: ${JSON.stringify(hostInfo)}`,
+      );
+    }
   await phones[1].page.screenshot({
     path: "test-artifacts/buzzer-player.png",
     animations: "disabled",

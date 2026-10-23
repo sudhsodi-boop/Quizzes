@@ -1574,13 +1574,42 @@ function renderLobby() {
     $("#nextQuestion").disabled = false;
   }
 }
+// The clip plays on the host laptop, over the hall speakers, so it is a local
+// playback: Play starts it from the beginning and Stop silences it at once.
+function syncClipButtons() {
+  const media = $("#hostBuzzerMedia"),
+    audio = media?.querySelector("audio"),
+    play = $("#playBuzzerClip"),
+    stop = $("#stopBuzzerClip"),
+    note = $("#clipNote");
+  if (!play || !stop) return;
+  const playing = !!audio && !audio.paused && !audio.ended,
+    stopped = media?.dataset.stopped === "1";
+  play.disabled = !audio;
+  stop.disabled = !playing;
+  play.textContent = playing
+    ? "▶ Playing… tap to restart"
+    : "▶ Play clip for the room";
+  if (note)
+    note.textContent = !audio
+      ? "No clip attached to this question."
+      : playing
+        ? "Clip playing over the hall speakers."
+        : stopped
+          ? "Clip stopped."
+          : "";
+}
 function hideBuzzer() {
   const host = $("#hostBuzzer");
   const player = $("#playerBuzzer");
   if (host) host.hidden = true;
   if (player) player.hidden = true;
   const audio = $("#hostBuzzerMedia audio");
-  if (audio) audio.pause();
+  if (audio) {
+    audio.pause();
+    audio.currentTime = 0;
+  }
+  syncClipButtons();
 }
 function renderBuzzer() {
   const q = liveQuestion;
@@ -1609,7 +1638,13 @@ function renderBuzzer() {
     media.innerHTML = url
       ? `<audio preload="auto" src="${e(url)}"></audio>`
       : "";
+    delete media.dataset.stopped;
+    const audio = media.querySelector("audio");
+    if (audio)
+      for (const event of ["play", "playing", "pause", "ended", "timeupdate"])
+        audio.addEventListener(event, syncClipButtons);
   }
+  syncClipButtons();
   $("#nextQuestion").disabled = true;
   renderBuzzQueue();
 }
@@ -1907,11 +1942,21 @@ $("#playBuzzerClip").onclick = () => {
   sound.enable();
   const audio = $("#hostBuzzerMedia audio");
   if (!audio) return showToast("Attach a music clip to this question first.");
+  delete $("#hostBuzzerMedia").dataset.stopped;
   audio.currentTime = 0;
   audio.volume = 1;
   audio.play().catch(() =>
     showToast("Tap play again to start the clip on this device."),
   );
+  syncClipButtons();
+};
+$("#stopBuzzerClip").onclick = () => {
+  const audio = $("#hostBuzzerMedia audio");
+  if (!audio) return;
+  audio.pause();
+  audio.currentTime = 0;
+  $("#hostBuzzerMedia").dataset.stopped = "1";
+  syncClipButtons();
 };
 $("#stopBuzzing").onclick = () => {
   if (confirm("Close buzzing so no one else can buzz in?")) send("stop_buzzing");

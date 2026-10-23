@@ -6048,6 +6048,14 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
   flex-wrap: wrap;
   gap: 10px;
 }
+.buzzer-play button {
+  flex: 1 1 auto;
+  min-width: 180px;
+}
+.clip-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
 .buzz-queue {
   list-style: none;
   margin: 0;

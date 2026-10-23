@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="theme-color" content="#513293" />
     <title>Quizzes · Live learning, together</title>
-    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.7" />
+    <link rel="stylesheet" href="/styles.css?v=0.9.0-rc.8" />
   </head>
   <body>
     <div class="app-shell" id="hostApp">
@@ -712,10 +712,19 @@
                   <button class="primary-btn" id="playBuzzerClip" type="button">
                     ▶ Play clip for the room
                   </button>
+                  <button
+                    class="secondary-btn"
+                    id="stopBuzzerClip"
+                    type="button"
+                    disabled
+                  >
+                    ■ Stop clip
+                  </button>
                   <button class="secondary-btn" id="stopBuzzing" type="button">
                     Stop buzzing
                   </button>
                 </div>
+                <p class="muted clip-note" id="clipNote"></p>
                 <div id="hostBuzzerMedia" class="buzzer-media"></div>
                 <p class="muted" id="buzzerStatus">Waiting for the first buzz…</p>
                 <ol id="buzzQueue" class="buzz-queue"></ol>
@@ -1096,10 +1105,10 @@ Answer: together</pre
       </p>
       <div id="draftRecoveryList"></div>
     </dialog>
-    <script src="/qr-code.js?v=0.9.0-rc.7"></script>
-    <script src="/quiz-sound.js?v=0.9.0-rc.7"></script>
-    <script src="/app.js?v=0.9.0-rc.7"></script>
-    <script src="/extensions.js?v=0.9.0-rc.7"></script>
-    <script src="/professional.js?v=0.9.0-rc.7"></script>
+    <script src="/qr-code.js?v=0.9.0-rc.8"></script>
+    <script src="/quiz-sound.js?v=0.9.0-rc.8"></script>
+    <script src="/app.js?v=0.9.0-rc.8"></script>
+    <script src="/extensions.js?v=0.9.0-rc.8"></script>
+    <script src="/professional.js?v=0.9.0-rc.8"></script>
   </body>
 </html>
